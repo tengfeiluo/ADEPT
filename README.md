@@ -2,248 +2,202 @@
 
 **A**utomated molecular **D**ynamics **E**ngine for **P**olymer simula**T**ions
 
-![Python](https://img.shields.io/badge/python-3.10-blue.svg)
-![Conda](https://img.shields.io/badge/env-conda-44A833.svg)
-![LAMMPS](https://img.shields.io/badge/MD-LAMMPS-orange.svg)
-![Psi4](https://img.shields.io/badge/DFT-Psi4-8A2BE2.svg)
-![Status](https://img.shields.io/badge/status-research-lightgrey.svg)
+[![Python](https://img.shields.io/badge/python-3.10-blue.svg)](#)
+[![Conda](https://img.shields.io/badge/env-conda-44A833.svg)](#)
+[![LAMMPS](https://img.shields.io/badge/MD-LAMMPS-orange.svg)](#)
+[![Psi4](https://img.shields.io/badge/DFT-Psi4-8A2BE2.svg)](#)
+[![OSPool](https://img.shields.io/badge/HPC-OSPool%20%2F%20HTCondor-red.svg)](#)
 
-ADEPT is an end-to-end, high-throughput workflow that turns a list of polymer SMILES into a rich set of computed properties. Starting from SMILES strings, it builds amorphous polymer structures, runs molecular dynamics (MD) simulations with LAMMPS, computes DFT-level monomer electronic properties with Psi4, and post-processes the trajectories into tabulated polymer properties.
+ADEPT turns polymer **SMILES** into tabulated physical/chemical properties: amorphous structure generation → LAMMPS MD → Psi4 monomer DFT → analysis CSVs. It is built for **high-throughput array jobs** on OSPool (HTCondor container universe), with step-level and TC mid-run checkpointing so long simulations survive the ~40 h wall-time limit.
 
-It is designed to run as array jobs on an HPC cluster, processing many polymers in parallel with a single submission.
+> Fork / extension of the original [sobinalosious/ADEPT](https://github.com/sobinalosious/ADEPT) workflow, with OSPool packaging, exit-85 checkpointing, and resumable NEMD thermal conductivity.
 
-## Table of Contents
+---
+
+## Table of contents
 
 - [Features](#features)
-- [Computed Properties](#computed-properties)
-- [Repository Structure](#repository-structure)
+- [Computed properties](#computed-properties)
+- [Repository layout](#repository-layout)
+- [What is *not* in this repo](#what-is-not-in-this-repo)
 - [Requirements](#requirements)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
+- [Quick start (OSPool)](#quick-start-ospool)
+- [Container runtime](#container-runtime)
 - [Configuration](#configuration)
-- [Workflow Overview](#workflow-overview)
-- [Output Files](#output-files)
-- [Contributing](#contributing)
+- [Checkpointing](#checkpointing)
+- [Thermal conductivity (TC) job](#thermal-conductivity-tc-job)
+- [Outputs](#outputs)
+- [Legacy / local HPC](#legacy--local-hpc)
 - [Citation](#citation)
+
+---
 
 ## Features
 
-- High-throughput generation of amorphous polymer structures directly from SMILES using PySIMM (chain construction, random-walk polymerization, GAFF2 parameters, RESP or Gasteiger charges, and LAMMPS data files).
-- Molecular dynamics equilibration and production runs with LAMMPS.
-- DFT-level monomer electronic properties using Psi4.
-- A single submission script with per-property toggles, so you can compute only the properties you need.
-- ML-assisted glass transition temperature (Tg) prediction used as an input guess to MD.
-- Automatic organization of inputs and results into a clean directory tree, with per-property CSV summaries.
+- Amorphous polymer generation from SMILES (PySIMM / GAFF2; Gasteiger or RESP charges)
+- LAMMPS equilibration and property MD (dielectric, Tg, viscosity, EMD/moduli, …)
+- Psi4 monomer electronic properties (HOMO/LUMO, gap, polarizability, …)
+- Per-property toggles via environment variables in the HTCondor submit file
+- ML Tg guess (`Files/model_mlp_tg.pkl`) fed into the Tg MD protocol
+- **OSPool-ready**: Singularity/Apptainer image on OSDF; no `module load lammps` on the AP
+- **Checkpoint / resume**: HTCondor `checkpoint_exit_code = 85` after each major step; TC uses LAMMPS restart chunks + heat-flux tally offsets
 
-## Computed Properties
+## Computed properties
 
 | Category | Properties |
 | --- | --- |
 | Structural | Density, radius of gyration |
-| Monomer electronic (DFT) | HOMO, LUMO, band gap, dipole moment, dipole polarizability, total energy, monomer dielectric constant and refractive index |
-| Polymer dielectric (MD) | Dielectric constant (dipole, electronic, and total components), refractive index, permittivity |
-| Thermal | Thermal conductivity, glass transition temperature (Tg), specific heat capacity (Cp), thermal diffusivity, volume/linear expansion coefficients |
-| Transport | Viscosity, diffusion coefficient, mean square displacement (MSD) |
-| Mechanical | Bulk modulus, shear modulus, Young's modulus, Poisson's ratio |
+| Monomer DFT | HOMO, LUMO, band gap, dipole, polarizability, energies, monomer dielectric / RI |
+| Dielectric (MD) | Dielectric constant and related components |
+| Thermal | Thermal conductivity (NEMD), Tg, Cp, expansion coefficients |
+| Transport | Viscosity (and related) |
+| Mechanical | Bulk / shear / Young’s moduli, Poisson’s ratio (from EMD) |
 
-## Repository Structure
+## Repository layout
 
 ```text
 ADEPT/
-├── 1.AmorphousGeneration/      # Structure generation and DFT
-│   ├── APG_resp.py             # Amorphous polymer generation (RESP charges)
-│   ├── APG_gas.py              # Amorphous polymer generation (Gasteiger charges)
-│   └── electronic_properties.py# Monomer DFT properties (Psi4)
-├── 2.Simulations/              # LAMMPS input files
-│   ├── lammps_eq1.in           # Equilibration stage 1
-│   ├── lammps_eq2.in           # Equilibration stage 2
-│   ├── lammps_dc.in            # Dielectric constant
-│   ├── lammps_TC.in            # Thermal conductivity (NEMD)
-│   ├── lammps_Tg.in            # Glass transition temperature
-│   ├── lammps_visc.in          # Viscosity
-│   ├── lammps_emd.in           # Thermodynamic/mechanical properties
-│   └── modulus_files/          # Elastic modulus LAMMPS templates
-├── 3.Analysis/                 # Post-processing and property calculation
-│   ├── calc_*.py               # Compute properties from trajectories
-│   ├── update_*.py             # Append results to RESULTS/*.csv
-│   └── predict_tg.py           # ML Tg predictor
+├── 1.AmorphousGeneration/   # APG (Gasteiger/RESP) + Psi4 monomer DFT
+├── 2.Simulations/           # LAMMPS inputs (eq, DC, TC, Tg, visc, EMD, modulus)
+├── 3.Analysis/              # Post-process + CSV updaters + predict_tg.py
 ├── Files/
-│   ├── files.sh                # Per-PID workflow orchestrator
-│   └── model_mlp_tg.pkl        # Pre-trained Tg model
-├── SMILES.csv                  # Input: PID, SMILES
-├── polymer-workflow.yml        # Conda environment definition
-├── submit.sh                   # HPC submission script (toggles + scheduler)
+│   ├── files.sh             # Per-PID workflow
+│   ├── checkpoint.sh        # step_done_*, exit-85 barrier, TC resume helpers
+│   └── model_mlp_tg.pkl     # Pretrained Tg model
+├── container/               # Image definition + build scripts (not the .sqsh itself)
+├── examples/                # Small demo SMILES / task lists
+├── tests/                   # Lightweight TC resume checks
+├── legacy/                  # Older SGE-style submit helpers
+├── run_adept.sh             # HTCondor executable entrypoint
+├── setup_env.sh             # Activate container / conda / conda-pack env
+├── submit_full.sub          # Main pipeline (16 CPUs; TC off)
+├── submit_TC.sub            # Dedicated TC (32 CPUs; resumable chunks)
+├── merge_tc_results.sh      # Merge POLYMER_DATA_TC → POLYMER_DATA_full
+├── tasks_full.txt           # HTCondor queue task indices
+├── SMILES.csv               # Input table: PID,SMILES
+├── polymer-workflow.yml     # Conda env recipe (for rebuilding the image)
 └── README.md
 ```
 
+## What is *not* in this repo
+
+Do **not** expect these in Git (they are local / OSDF artifacts):
+
+| Artifact | Why excluded |
+| --- | --- |
+| `POLYMER_DATA*`, `Log_Files/` | Simulation outputs |
+| `adept-*.sqsh`, `*.sandbox/`, `.adept_env/` | Multi‑GB runtime images / unpacked envs |
+| `container/polymer-workflow.tar.gz`, `container/libint-2.9-lib/` | Large build intermediates |
+| Job manifests / checkpoint status files | Ephemeral HTCondor sidecars |
+
+Share the **squashfs image** separately (OSDF copy or download link). See [Container runtime](#container-runtime).
+
 ## Requirements
 
-- An HPC cluster with the **Sun Grid Engine (SGE)** scheduler (or a compatible scheduler).
-- **LAMMPS** installed as an environment module.
-- **Conda** for Python environment management.
-- **PySIMM** (installed separately, see below).
+- OSPool (or similar) access with **Singularity/Apptainer** and OSDF
+- An ADEPT container image published under your `osdf:///.../containers/`
+- A PATh / OSG project name for `+ProjectName`
+- Input `SMILES.csv` (`PID,SMILES`) and a `tasks_*.txt` list of 1-based CSV row indices (see `tasks_full.txt`)
 
-The Conda environment (`polymer-workflow.yml`) provides Python 3.10, NumPy, pandas, RDKit, Psi4, scikit-learn, joblib, and the RESP charge tooling.
+Optional for **building** the image yourself: conda/mamba, `conda-pack`, Apptainer, `mksquashfs`.
 
-## Installation
+## Quick start (OSPool)
 
-### 1. Create the Conda environment
+1. **Clone**
 
-```bash
-module load conda
-conda env create -f polymer-workflow.yml
-conda activate polymer-workflow
-```
+   ```bash
+   git clone https://github.com/RENZHENGZHANG01/ADEPT.git
+   cd ADEPT
+   mkdir -p Log_Files POLYMER_DATA_full
+   ```
 
-### 2. Install PySIMM
+2. **Get the runtime image** (do not rebuild unless you must)
 
-PySIMM is installed separately inside the same Conda environment. Choose one option.
+   - Copy a known-good `adept-v2.sqsh` into your OSDF data directory, e.g.  
+     `/ospool/<ap>/data/$USER/containers/adept-v2.sqsh`  
+   - Or build with `./container/build_sif.sh` (see `container/README.md`)
 
-**Option 1 — pip install**
+3. **Edit submit files** (`submit_full.sub`, `submit_TC.sub`)
 
-```bash
-conda activate polymer-workflow
-git clone https://github.com/polysimtools/pysimm.git
-cd pysimm
-pip install .
-```
+   - `container_image = osdf:///...`
+   - `initialdir = /home/$USER/ADEPT`
+   - `+ProjectName = "..."`
 
-Then add the LAMMPS executable path to your `~/.bashrc` (edit the path as needed) and reload it:
+4. **Prepare inputs**
 
-```bash
-export LAMMPS_EXEC="/usr/bin/lmp"
-source ~/.bashrc
-```
+   ```bash
+   # Demo (5 polymers): copy examples into place, or edit SMILES.csv / tasks_full.txt
+   cp examples/SMILES_demo.csv SMILES.csv   # optional small demo
+   cp examples/tasks_demo.txt tasks_full.txt
+   ```
 
-**Option 2 — complete_install.py**
+5. **Submit**
 
-```bash
-conda activate polymer-workflow
-git clone https://github.com/polysimtools/pysimm.git
-python pysimm/complete_install.py --pysimm "$PWD"
-```
+   ```bash
+   condor_submit submit_full.sub   # APG → opt → DFT → DC → Tg → visc → EMD
+   condor_submit submit_TC.sub     # TC only (32 CPUs), parallel to main
+   condor_q
+   ```
 
-### 3. Load LAMMPS
+6. **After TC finishes**
 
-LAMMPS is provided by your cluster's module system and does not need to be installed inside the Conda environment:
+   ```bash
+   ./merge_tc_results.sh
+   ```
 
-```bash
-module load lammps
-```
+Results land under `POLYMER_DATA_full/<task>/POLYMER_DATA/` (and `POLYMER_DATA_TC/` for TC until merged).
 
-## Quick Start
+## Container runtime
 
-Prepare `SMILES.csv` with a header row followed by one polymer per line:
+OSG access points typically **do not** provide LAMMPS/Psi4 modules. ADEPT ships dependencies inside an Apptainer/Singularity image:
 
-```text
-PID,SMILES
-PID00001,*C*
-PID00002,*CC(*)C
-```
+- Image recipe: `container/adept.def` / `adept-packed.def`
+- Build helper: `container/build_sif.sh`
+- At job start, `setup_env.sh` activates `/opt/conda/envs/polymer-workflow` inside the image (`lmp`, `python`, `mpirun`, Psi4, …)
 
-Submit the workflow as an SGE array job. Each task index maps to a row in `SMILES.csv`. For example, to process the first 50 polymers:
-
-```bash
-qsub -t 1-50 submit.sh
-```
-
-Job logs are written to `Log_Files/`, and results accumulate under `POLYMER_DATA/`.
+**Collaborators:** prefer sharing one published `.sqsh` on OSDF (same versions) rather than each person rebuilding conda. Put **code on GitHub**; put the **image on OSDF**.
 
 ## Configuration
 
-All run settings live in `submit.sh`. Edit the property toggles to choose which calculations to run (`1` = enable, `0` = disable):
+Environment variables (set in the submit `environment = "..."` string):
 
-| Toggle | Step | Description |
-| --- | --- | --- |
-| `DO_APG` | Amorphous generation | Build the amorphous polymer structure (`.lmps`) from SMILES. |
-| `DO_OPT` | Equilibration | MD equilibration; computes density and radius of gyration. |
-| `DO_MONO_ELECTRONIC` | Monomer DFT | Psi4 monomer electronic properties (HOMO, LUMO, band gap, dipole, etc.). |
-| `DO_DC` | Dielectric | Polymer dielectric constant, refractive index, permittivity from MD. |
-| `DO_TC` | Thermal conductivity | Thermal conductivity via NEMD. |
-| `DO_TG` | Glass transition | Glass transition temperature (uses ML-predicted Tg as input to MD). |
-| `DO_VISC` | Viscosity | Viscosity, diffusion coefficient, and MSD. |
-| `DO_EMD` | Thermo/mechanical | Cp, thermal/volume/linear expansion, and mechanical moduli. |
+| Variable | Role |
+| --- | --- |
+| `CHARGE_METHOD` | `GASTEIGER` or `RESP` |
+| `DO_APG` / `DO_OPT` / `DO_MONO_ELECTRONIC` / `DO_DC` / `DO_TC` / `DO_TG` / `DO_VISC` / `DO_EMD` | Stage toggles (`0`/`1`) |
+| `ADEPT_CHECKPOINT_MODE` | `exit85` enables self-checkpoint barriers |
+| `ADEPT_CKPT_BUDGET_SEC` | `0` = checkpoint after every completed step |
+| `ADEPT_TC_TOTAL_STEPS` | TC production length (default `20000000`) |
+| `ADEPT_TC_CHUNK_STEPS` | TC chunk size between restarts (default `4000000`) |
+| `NSLOTS` | MPI ranks (usually `=$(request_cpus)`) |
 
-Additional settings in `submit.sh`:
+## Checkpointing
 
-- `CHARGE_METHOD` — `"RESP"` or `"GASTEIGER"`. RESP is more accurate (recommended when computing the dielectric constant) but slower than Gasteiger.
-- `SMILES_FILE` — input CSV (default `SMILES.csv`).
-- `CSV_START_LINE` — `2` to skip the header (default), or `1` if the file has no header.
+- **Main pipeline:** after each finished stage, the job exits **85**; HTCondor stores `POLYMER_DATA` and requeues. Resume uses `step_done_*` markers (result CSVs / success files).
+- **Do not enable** `stream_output` / `stream_error` on APs where StreamHandler Holds jobs (`Invalid argument` on `*.err`).
+- **TC:** cannot rely on a single uninterrupted 20M-step run under a 40 h wall. `submit_TC.sub` runs **chunks**, writes LAMMPS restart files, offset-corrects Langevin tallies for `calc_TC.py`, and exit-85 checkpoints between chunks.
 
-The scheduler directives at the top of `submit.sh` (queue, parallel environment, module versions) may need to be adjusted to match your cluster.
+## Thermal conductivity (TC) job
 
-## Workflow Overview
+TC is **split** from `submit_full.sub` (`DO_TC=0`) because the NEMD cell is `replicate 3 1 1` and needs more wall time / CPUs. Use `submit_TC.sub` (32 CPUs). Outputs go to `POLYMER_DATA_TC/`; merge with `./merge_tc_results.sh`.
 
-For each polymer (PID), `Files/files.sh` runs the enabled steps in order:
+## Outputs
 
-1. **Amorphous Polymer Generation (APG)** — build the structure and assign force-field parameters and charges.
-2. **Optimization / Equilibration** — equilibrate the structure; compute density and radius of gyration.
-3. **Monomer Electronic Properties** — run Psi4 DFT on the monomer.
-4. **Dielectric Constant** — MD-based dielectric properties.
-5. **Thermal Conductivity** — NEMD thermal conductivity.
-6. **Glass Transition Temperature** — MD Tg, seeded with an ML-predicted Tg.
-7. **Viscosity** — viscosity and diffusion (prefers MD Tg, falls back to ML-predicted Tg).
-8. **EMD** — specific heat, expansion coefficients, and mechanical moduli.
+Per task, under `POLYMER_DATA_full/<task>/POLYMER_DATA/`:
 
-## Output Files
+- `MODEL/`, `OPTIMIZATION/`, `MONOMER_ELECTRONIC/`, `DIELECTRIC_CONSTANT/`, …
+- `RESULTS/*.csv` — tabulated properties keyed by PID
 
-Each property step writes per-polymer working files under a dedicated subfolder in `POLYMER_DATA/` (e.g. `POLYMER_DATA/OPTIMIZATION/<PID>/`) and appends a summary row to a CSV in `POLYMER_DATA/RESULTS/`:
+Logs: `Log_Files/full.<task>.{out,err}`, `Log_Files/tc.<task>.{out,err}`.
 
-```text
-POLYMER_DATA/
-├── OPTIMIZATION/<PID>/
-├── MONOMER_ELECTRONIC/<PID>/
-├── DIELECTRIC_CONSTANT/<PID>/
-├── THERMAL_CONDUCTIVITY/<PID>/
-├── GLASS_TRANSITION/<PID>/
-├── VISCOSITY/<PID>/
-├── EMD/<PID>/
-└── RESULTS/
-    ├── RHO_MD.csv        # Density
-    ├── RG_MD.csv         # Radius of gyration
-    ├── HOMO_DFT.csv      # HOMO (monomer DFT)
-    ├── LUMO_DFT.csv      # LUMO (monomer DFT)
-    ├── BANDGAP_DFT.csv   # Band gap (monomer DFT)
-    ├── MU_DFT.csv        # Dipole moment (monomer DFT)
-    ├── ALPHA_DFT.csv     # Dipole polarizability (monomer DFT)
-    ├── ETOTAL_DFT.csv    # Total energy (monomer DFT)
-    ├── EDCMONO_DFT.csv   # Dielectric constant, electronic component (monomer estimate)
-    ├── ERIMONO_DFT.csv   # Refractive index (monomer estimate)
-    ├── DCD_MD.csv        # Dielectric constant, dipole component (polymer)
-    ├── DCE_MD.csv        # Dielectric constant, electronic component (polymer)
-    ├── DC_MD.csv         # Dielectric constant, total (polymer)
-    ├── RI_MD.csv         # Refractive index (polymer)
-    ├── PE_MD.csv         # Permittivity (polymer)
-    ├── TC_MD.csv         # Thermal conductivity
-    ├── TG_MD.csv         # Glass transition temperature
-    ├── VISC_MD.csv       # Viscosity
-    ├── D_MD.csv          # Diffusion coefficient
-    ├── CP_MD.csv         # Specific heat (Cp)
-    ├── ALPHAT_MD.csv     # Thermal diffusivity
-    ├── ALPHAP_MD.csv     # Volume expansion coefficient
-    ├── ALPHAL_MD.csv     # Linear expansion coefficient
-    ├── K_MD.csv          # Bulk modulus
-    ├── G_MD.csv          # Shear modulus
-    ├── E_MD.csv          # Young's modulus
-    └── NU_MD.csv         # Poisson's ratio
-```
+## Legacy / local HPC
 
-The `RESULTS/` CSVs are keyed by `PID`, so results from many array tasks collect into a single table per property.
-
-## Contributing
-
-Contributions, bug reports, and feature requests are welcome. Please open an issue to discuss a proposed change before submitting a pull request, and keep changes focused and well documented. When reporting a problem, include your scheduler, module versions, and a minimal `SMILES.csv` that reproduces the issue.
+`legacy/submit_sge.sh` is an older Grid Engine–style driver (`module load` LAMMPS). Prefer the OSPool container path above for portability.
 
 ## Citation
 
-If you use ADEPT in your research, please cite:
+If you use ADEPT, please cite the original ADEPT project and relevant method papers (LAMMPS, Psi4, PySIMM, etc.). See the upstream repository: [sobinalosious/ADEPT](https://github.com/sobinalosious/ADEPT).
 
-```bibtex
-@article{alosious2026adept,
-  title={ADEPT-PolyGraphMT: Automated Molecular Simulation and Multi-Task Multi-Fidelity Machine Learning for Polymer Property Generation and Prediction},
-  author={Alosious, Sobin and Liu, Yuhan and Xu, Jiaxin and Liu, Gang and Zhang, Renzheng and Jiang, Meng and Luo, Tengfei},
-  journal={Digital Discovery},
-  year={2026},
-  publisher={Royal Society of Chemistry}
-}
-```
+## License
+
+Follow the license of the upstream ADEPT project unless otherwise noted in this repository.

@@ -1,0 +1,65 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+%environment
+    export PATH=/opt/conda/bin:$PATH
+    export LAMMPS_EXEC=/opt/conda/envs/polymer-workflow/bin/lmp
+    export LD_LIBRARY_PATH=/opt/conda/envs/polymer-workflow/lib:$LD_LIBRARY_PATH
+    export OMP_NUM_THREADS=1
+    export MKL_INTERFACE_LAYER=""
+    export OMPI_MCA_btl=vader,self
+    export UCX_TLS=sm,self
+
+%post
+    set -eux
+    export CONDA_PKGS_DIRS=/var/cache/conda-pkgs
+    export TMPDIR=/var/tmp
+    mkdir -p "$CONDA_PKGS_DIRS" "$TMPDIR"
+
+    mamba install -y git wget
+
+    git clone --depth 1 https://github.com/polysimtools/pysimm.git /opt/pysimm
+
+    cat > /opt/polymer-workflow.yml <<'EOF'
+name: polymer-workflow
+channels:
+  - conda-forge
+  - psi4
+dependencies:
+  - python=3.10
+  - numpy
+  - pandas
+  - rdkit
+  - psi4
+  - scikit-learn
+  - joblib
+  - packaging
+  - simple-dftd3
+  - dftd3-python
+  - scipy
+  - matplotlib
+  - lammps
+  - openmpi
+  - pip
+  - pip:
+      - git+https://github.com/cdsgroup/resp.git
+EOF
+
+    mamba env create -f /opt/polymer-workflow.yml
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate polymer-workflow
+
+    ln -sf libint2.so "$CONDA_PREFIX/lib/libint2.so.2" || true
+    ln -sf mpirun "$CONDA_PREFIX/bin/mpiexec" || true
+
+    pip install /opt/pysimm
+
+    mkdir -p /opt/ADEPT
+    rm -rf /tmp/conda-pkgs
+
+%runscript
+    exec "$@"
+
+%labels
+    Author renzheng.zhang
+    Version adept-v1

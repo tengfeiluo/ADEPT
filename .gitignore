@@ -1,4 +1,58 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 .ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
 .DS_Store
+*.swp
+*~
+.vscode/
+.idea/
+
+# Local conda / runtime (never commit)
+.adept_env/
+*.sqsh
+*.sif
+adept-*.sandbox/
+*.sandbox/
+
+# Packed envs and large binary deps (build locally / fetch from OSDF)
+container/polymer-workflow.tar.gz
+container/libint-2.9-lib/
+container/*.log
+container/timer.dat
+
+# Simulation outputs and checkpoints (do not publish)
+POLYMER_DATA/
+POLYMER_DATA_*/
+POLYMER_DATA_full/
+POLYMER_DATA_full.*/
+POLYMER_DATA_bootstrap/
+POLYMER_DATA_ep_test/
+POLYMER_DATA_TC/
+Log_Files/
+job_manifest.*.txt
+checkpoint_status.*.txt
+*_TC.log
+*.chunk.dat
+*_rstrt_*
+*_tc_progress.dat
+*_tally_offset.inc
+timer.dat
+
+# Local scratch logs (keep tracked scripts)
+/env_create.log
+/retest.log
+/smoke_test.log
+
+# Local-only
+SMILES.full.local.csv
+.env
+*.pem
+
+# Test scratch molecules
+1.AmorphousGeneration/test/*.mol

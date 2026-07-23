@@ -399,59 +399,93 @@ def refractive_index(psi4_mol, alpha):
 
 
 
+def dft_outputs_complete(output_dir, pid):
+    required = [
+        f"{pid}_optimized.xyz",
+        f"{pid}_homo.dat",
+        f"{pid}_lumo.dat",
+        f"{pid}_total_energy.dat",
+        f"{pid}_avg_polarizability.dat",
+    ]
+    return all(os.path.isfile(os.path.join(output_dir, name)) for name in required)
+
+
 def process_smiles(pid, smiles, output_dir, nproc=1):
     """
     Processes a single SMILES string: generates the molecule, saves the initial 
     geometry as an XYZ file, optimizes the geometry, calculates dipole polarizability 
     and electronic properties, and saves results to files.
     """
+    if dft_outputs_complete(output_dir, pid):
+        print(f"[SKIP] DFT outputs already complete for PID {pid} in {output_dir}")
+        return
+
     try:
-        # Generate molecule and save initial geometry
-        mol = generate_molecule(smiles)
-        initial_xyz_str = generate_xyz_string(mol)
         initial_xyz_file = os.path.join(output_dir, f"{pid}_initial.xyz")
-        with open(initial_xyz_file, "w") as f:
-            f.write(initial_xyz_str)
-        print(f"Saved initial geometry to {initial_xyz_file}")
-
-        # Optimize geometry using the modified function
-        optimized_mol, optimized_geom_str = geometry_optimization(initial_xyz_file, num_processors=nproc)
-        print(f"Optimized geometry obtained for PID {pid}.")
-
-        # Save optimized geometry to file
         optimized_xyz_file = os.path.join(output_dir, f"{pid}_optimized.xyz")
-        with open(optimized_xyz_file, "w") as f:
-            f.write(optimized_geom_str)
-        print(f"Optimized geometry saved to {optimized_xyz_file}")
 
-        # Calculate dipole polarizability
-        alpha, polarizability_tensor = dipole_polarizability(optimized_mol, nproc=nproc)
-        print(f"PID {pid} - Average polarizability: {alpha:.3f} angstrom^3")
-        print(f"PID {pid} - Polarizability tensor:\n{polarizability_tensor}")
+        if not os.path.isfile(initial_xyz_file):
+            mol = generate_molecule(smiles)
+            initial_xyz_str = generate_xyz_string(mol)
+            with open(initial_xyz_file, "w") as f:
+                f.write(initial_xyz_str)
+            print(f"Saved initial geometry to {initial_xyz_file}")
+        else:
+            print(f"[SKIP] Reusing existing initial geometry: {initial_xyz_file}")
 
-        # Save polarizability results
-        with open(os.path.join(output_dir, f"{pid}_avg_polarizability.dat"), "w") as f:
-            f.write(f"{alpha:.3f}\n")
-        with open(os.path.join(output_dir, f"{pid}_polarizability_tensor.dat"), "w") as f:
-            f.write(f"{polarizability_tensor}\n")
+        if os.path.isfile(optimized_xyz_file):
+            print(f"[SKIP] Reusing existing optimized geometry: {optimized_xyz_file}")
+            with open(optimized_xyz_file, "r") as f:
+                optimized_geom_str = f.read()
+            optimized_mol = psi4.geometry(optimized_geom_str)
+        else:
+            optimized_mol, optimized_geom_str = geometry_optimization(initial_xyz_file, num_processors=nproc)
+            print(f"Optimized geometry obtained for PID {pid}.")
+            with open(optimized_xyz_file, "w") as f:
+                f.write(optimized_geom_str)
+            print(f"Optimized geometry saved to {optimized_xyz_file}")
 
-        # Calculate refractive index and dielectric constant
-        refractive_ind, dielectric_constant = refractive_index(optimized_mol, alpha)
-        print(f" Refractive Index: {refractive_ind:.3f}, Dielectric Constant: {dielectric_constant:.3f}")
+        alpha_file = os.path.join(output_dir, f"{pid}_avg_polarizability.dat")
+        if os.path.isfile(alpha_file):
+            print(f"[SKIP] Polarizability output exists: {alpha_file}")
+            with open(alpha_file, "r") as f:
+                alpha = float(f.read().strip())
+            tensor_file = os.path.join(output_dir, f"{pid}_polarizability_tensor.dat")
+            if os.path.isfile(tensor_file):
+                with open(tensor_file, "r") as f:
+                    polarizability_tensor = f.read()
+            else:
+                alpha, polarizability_tensor = dipole_polarizability(optimized_mol, nproc=nproc)
+        else:
+            alpha, polarizability_tensor = dipole_polarizability(optimized_mol, nproc=nproc)
+            print(f"PID {pid} - Average polarizability: {alpha:.3f} angstrom^3")
+            print(f"PID {pid} - Polarizability tensor:\n{polarizability_tensor}")
+            with open(alpha_file, "w") as f:
+                f.write(f"{alpha:.3f}\n")
+            with open(os.path.join(output_dir, f"{pid}_polarizability_tensor.dat"), "w") as f:
+                f.write(f"{polarizability_tensor}\n")
 
-        # Save refractive index and dielectric constant
-        with open(os.path.join(output_dir, f"{pid}_refractive_index_monomer.dat"), "w") as f:
-            f.write(f"{refractive_ind}\n")
-        with open(os.path.join(output_dir, f"{pid}_electronic_dielectric_constant_monomer.dat"), "w") as f:
-            f.write(f"{dielectric_constant}\n")
+        ri_file = os.path.join(output_dir, f"{pid}_refractive_index_monomer.dat")
+        if not os.path.isfile(ri_file):
+            refractive_ind, dielectric_constant = refractive_index(optimized_mol, alpha)
+            print(f" Refractive Index: {refractive_ind:.3f}, Dielectric Constant: {dielectric_constant:.3f}")
+            with open(ri_file, "w") as f:
+                f.write(f"{refractive_ind}\n")
+            with open(os.path.join(output_dir, f"{pid}_electronic_dielectric_constant_monomer.dat"), "w") as f:
+                f.write(f"{dielectric_constant}\n")
+        else:
+            print(f"[SKIP] Refractive index output exists: {ri_file}")
 
-        # Calculate electronic properties
+        homo_file = os.path.join(output_dir, f"{pid}_homo.dat")
+        if os.path.isfile(homo_file):
+            print(f"[SKIP] Electronic property outputs already exist for PID {pid}")
+            return
+
         properties = electronic_properties(optimized_mol, nproc=nproc)
         print(f"Electronic properties for PID {pid}:")
         for key, value in properties.items():
             print(f"  {key}: {value}")
 
-        # Save electronic properties
         property_files = {
             "total_energy.dat": "Total Energy (kcal/mol)",
             "homo.dat": "HOMO (eV)",
@@ -472,8 +506,11 @@ if __name__ == "__main__":
         sys.exit(1)
 
     pid = sys.argv[1]
-    nproc = int(sys.argv[2])
-    smiles_csv = "../../../SMILES.csv"
+    nproc = max(1, min(int(sys.argv[2]), 4))
+    smiles_csv = os.environ.get(
+        "SMILES_FILE",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "SMILES.csv")),
+    )
 
     output_dir = os.getcwd() 
     #os.makedirs(output_dir, exist_ok=True)

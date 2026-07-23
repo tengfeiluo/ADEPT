@@ -1,0 +1,54 @@
+universe = container
+# EDIT for your account:
+container_image = osdf:///ospool/ap40/data/renzheng.zhang/containers/adept-v2.sqsh
+
+executable = run_adept.sh
+arguments  = $(task)
+
+# EDIT: absolute path to your ADEPT checkout on the access point
+initialdir = /home/renzheng.zhang/ADEPT
+
+preserve_relative_paths = True
+
+output = Log_Files/tc.$(task).out
+error  = Log_Files/tc.$(task).err
+log    = Log_Files/tc.log
+
+stream_output = False
+stream_error  = False
+
+# Dedicated Thermal-Conductivity job (higher core count).
+# TC replicates the cell 3x (~11k atoms) and runs 20M steps. Mid-run progress is
+# preserved via LAMMPS binary restarts + offset-corrected thermo.dat every
+# ADEPT_TC_CHUNK_STEPS (default 4M), then exit-85 self-checkpoint inside POLYMER_DATA.
+request_cpus   = 32
+request_memory = 16GB
+request_disk   = 20GB
+
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+
+checkpoint_exit_code      = 85
+transfer_checkpoint_files = POLYMER_DATA, checkpoint_status.$(task).txt
+
+transfer_input_files = run_adept.sh, setup_env.sh, SMILES.csv, Files, 1.AmorphousGeneration, 2.Simulations, 3.Analysis, container/fix_libint.sh, POLYMER_DATA_full/$(task)
+
+transfer_output_files = POLYMER_DATA, job_manifest.$(task).txt, checkpoint_status.$(task).txt, Log_Files/debug-agent.log
+
+# Isolated output tree so TC never races the main pipeline's POLYMER_DATA_full.
+# Merge afterwards with: ./merge_tc_results.sh
+transfer_output_remaps = "\
+  POLYMER_DATA = POLYMER_DATA_TC/$(task)/POLYMER_DATA; \
+  job_manifest.$(task).txt = Log_Files/tc_job_manifest.$(task).txt; \
+  checkpoint_status.$(task).txt = Log_Files/tc_checkpoint_status.$(task).txt; \
+  Log_Files/debug-agent.log = Log_Files/tc_debug-agent.$(task).log"
+
+environment = "NSLOTS=$(request_cpus) CHARGE_METHOD=GASTEIGER ADEPT_CHECKPOINT_MODE=exit85 ADEPT_CKPT_BUDGET_SEC=0 ADEPT_TC_TOTAL_STEPS=20000000 ADEPT_TC_CHUNK_STEPS=4000000 DO_APG=0 DO_OPT=0 DO_MONO_ELECTRONIC=0 DO_DC=0 DO_TC=1 DO_TG=0 DO_VISC=0 DO_EMD=0"
+
+# EDIT: your OSPool / PATh project name
++ProjectName = "ND_Luo"
++JobDurationCategory = "Long"
+
+requirements = (HAS_SINGULARITY == true)
+
+queue task from tasks_full.txt

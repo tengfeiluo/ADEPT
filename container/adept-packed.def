@@ -1,0 +1,34 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+%environment
+    export PATH=/opt/conda/envs/polymer-workflow/bin:/opt/conda/bin:$PATH
+    export LAMMPS_EXEC=/opt/conda/envs/polymer-workflow/bin/lmp
+    export LD_LIBRARY_PATH=/opt/conda/envs/polymer-workflow/lib:$LD_LIBRARY_PATH
+    export OMP_NUM_THREADS=1
+    export MKL_INTERFACE_LAYER=""
+    export OMPI_MCA_btl=vader,self
+    export UCX_TLS=sm,self
+
+%files
+    polymer-workflow.tar.gz /opt/polymer-workflow.tar.gz
+    libint-2.9-lib /opt/libint-2.9-lib
+
+%post
+    set -eux
+    mkdir -p /opt/conda/envs/polymer-workflow
+    tar -xzf /opt/polymer-workflow.tar.gz -C /opt/conda/envs/polymer-workflow
+    /opt/conda/envs/polymer-workflow/bin/conda-unpack || true
+    if [ -d /opt/libint-2.9-lib ]; then
+        cp -a /opt/libint-2.9-lib/libint2.so* /opt/conda/envs/polymer-workflow/lib/
+    fi
+    ln -sf mpirun /opt/conda/envs/polymer-workflow/bin/mpiexec || true
+    chmod -R a+rX /opt/conda/envs/polymer-workflow
+    rm -f /opt/polymer-workflow.tar.gz
+
+%runscript
+    exec "$@"
+
+%labels
+    Author renzheng.zhang
+    Version adept-v1-packed

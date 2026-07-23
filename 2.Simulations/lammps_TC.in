@@ -1,74 +1,131 @@
+# Thermal conductivity (NEMD) with mid-run restart support.
+#
+# Fresh start:  read_data + replicate, then NEMD production.
+# Resume:       read_restart (atom positions/velocities), redefine regions/
+#               groups/fixes. Langevin tally resets on restart in this LAMMPS
+#               build, so f_4/f_5 written to the chunk thermo file are
+#               offset-corrected (tally_off4/tally_off5) to keep a continuous
+#               cumulative energy series for calc_TC.py's slope fit.
+#
+# Command-line variables (set by Files/files.sh):
+#   name          PID string
+#   resume        0 = fresh, 1 = read_restart
+#   rstfile       restart file path (when resume=1)
+#   tally_off4    additive offset for fix 4 tally (default 0)
+#   tally_off5    additive offset for fix 5 tally (default 0)
+#   run_upto      absolute step to run to this invocation (inclusive target)
+#   total_steps   full production length (default 20000000; documentation only)
+#
+# Outputs for this invocation (merged by the bash driver afterwards):
+#   ${name}_thermo.chunk.dat
+#   ${name}_temp.chunk.profile
+#   ${name}_rstrt_3 / ${name}_rstrt_4  (alternating binary restarts)
 
-log             ${name}_TC.log
+log             ${name}_TC.log append
 
 units           real
 atom_style      full
-pair_style      lj/cut/coul/long 12.0  12.0 
+pair_style      lj/cut/coul/long 12.0  12.0
 kspace_style    pppm 1e-4
 bond_style      harmonic
 angle_style     harmonic
 dihedral_style  fourier
 improper_style  cvff
 special_bonds   amber
-pair_modify     mix arithmetic 
-read_data 		../../OPTIMIZATION/${name}/${name}_eq2.data 
+pair_modify     mix arithmetic
 
-replicate 3 1 1
+# All of resume/rstfile/run_upto/total_steps MUST be supplied on the command
+# line by the bash driver (files.sh). tally offsets come from
+# ${name}_tally_offset.inc (written next to the working directory).
 
-#restart 100000 ${name}_rstrt_3 ${name}_rstrt_4 
+if "${resume} == 0" then &
+  "read_data ../../OPTIMIZATION/${name}/${name}_eq2.data" &
+  "replicate 3 1 1" &
+  "reset_timestep 0" &
+else &
+  "read_restart ${rstfile}"
+
+# Dual alternating restarts every 100000 steps (author's original intent).
+restart         100000 ${name}_rstrt_3 ${name}_rstrt_4
 
 timestep        0.25
 
-neighbor    2.5 bin 
-neigh_modify	delay 0 every 50 check no 
-#neigh_modify 	delay 0 every 1 check yes
+neighbor        2.5 bin
+neigh_modify    delay 0 every 50 check no
 
-#dump 1 all xyz 400000 ${name}.xyz 
-
-
-region rqin block $((xlo+xhi)/2-40) $((xlo+xhi)/2-35) INF INF INF INF units box
+# Regions/groups must be (re)defined after both fresh start and restart.
+region rqin  block $((xlo+xhi)/2-40) $((xlo+xhi)/2-35) INF INF INF INF units box
 region rqout block $((xlo+xhi)/2+35) $((xlo+xhi)/2+40) INF INF INF INF units box
 region rfree block $((xlo+xhi)/2-40) $((xlo+xhi)/2+40) INF INF INF INF units box
-group gin dynamic all region rqin
-group gout dynamic all region rqout
+
+# Delete leftover group names from a restart file (they come back as static).
+if "${resume} == 1" then &
+  "group gin delete" &
+  "group gout delete" &
+  "group gfree delete"
+
+group gin  dynamic all region rqin  every 10
+group gout dynamic all region rqout every 10
 group gfree region rfree
 
+#################### NEMD Calculation #####################
 
-#################### NEME Calculation #####################
-
+# Re-issue fixes with the SAME IDs after restart (LAMMPS restores matching
+# fix state when present; langevin tally still starts at 0 in practice, hence
+# the offsets below).
 fix NVE gfree nve
-reset_timestep 0
 
 compute ke gfree ke/atom
 variable temp atom c_ke/0.003
 
 variable OneOverNumBins equal 1.0/(round((xhi-xlo)/1.2))
 compute xbin all chunk/atom bin/1d x center ${OneOverNumBins} units reduced
-fix 1 all ave/chunk 1 2000000 2000000 xbin v_temp norm all ave one file ${name}_temp.profile 
 
-fix 4 gin langevin 320 320 $(100.0*dt) 123456 tally yes
+# Temperature profile for this chunk only; bash driver merges into ${name}_temp.profile
+fix 1 all ave/chunk 1 2000000 2000000 xbin v_temp norm all ave one file ${name}_temp.chunk.profile
+
+fix 4 gin  langevin 320 320 $(100.0*dt) 123456 tally yes
 fix 5 gout langevin 280 280 $(100.0*dt) 123457 tally yes
 
+# Offset-corrected tallies so calc_TC.py sees a continuous cumulative series.
+# Offsets are written by the bash driver into ${name}_tally_offset.inc
+# (avoids "lmp -var x -1.23" which LAMMPS treats as a flag).
+include         ${name}_tally_offset.inc
+variable f4c    equal f_4+v_off4
+variable f5c    equal f_5+v_off5
+
 thermo 10000
-thermo_style custom step temp epair emol etotal press density vol lx ly lz f_4 f_5
+thermo_style custom step temp epair emol etotal press density vol lx ly lz v_f4c v_f5c
 thermo_modify flush yes
 
-variable my_step equal step
-variable my_temp equal temp
+variable my_step  equal step
+variable my_temp  equal temp
 variable my_epair equal epair
-variable my_emol equal emol
-variable my_etot equal etotal
+variable my_emol  equal emol
+variable my_etot  equal etotal
 variable my_press equal press
-variable my_rho equal density
-variable my_vol equal vol
-variable my_lx equal lx
-variable my_ly equal ly
-variable my_lz equal lz
-variable my_f4 equal f_4
-variable my_f5 equal f_5
+variable my_rho   equal density
+variable my_vol   equal vol
+variable my_lx    equal lx
+variable my_ly    equal ly
+variable my_lz    equal lz
+variable my_f4    equal v_f4c
+variable my_f5    equal v_f5c
 
-fix thermo_out all print 10000 "${my_step} ${my_temp} ${my_epair} ${my_emol} ${my_etot} ${my_press} ${my_rho} ${my_vol} ${my_lx} ${my_ly} ${my_lz} ${my_f4} ${my_f5}" file ${name}_thermo.dat screen no title ""
+# Per-chunk thermo file (bash merges into ${name}_thermo.dat).
+fix thermo_out all print 10000 "${my_step} ${my_temp} ${my_epair} ${my_emol} ${my_etot} ${my_press} ${my_rho} ${my_vol} ${my_lx} ${my_ly} ${my_lz} ${my_f4} ${my_f5}" file ${name}_thermo.chunk.dat screen no title ""
 
-#run 200
-run 20000000
+print "TC_RUN resume=${resume} rstfile=${rstfile} run_upto=${run_upto} off4=$(v_off4) off5=$(v_off5) step=$(step)"
+
+run ${run_upto} upto
+
+# Final restart so a chunk boundary always has a readable restart even if the
+# periodic writer has not hit its interval yet.
+write_restart ${name}_rstrt_end
+
+# Progress sidecar (step, offset-corrected f4/f5). Used by the bash driver when
+# the last thermo sample lags the actual timestep (thermo every 10000 steps).
+print "$(step) $(v_f4c) $(v_f5c)" file ${name}_tc_progress.dat screen no
+
+print "TC_DONE step=$(step) f4c=$(v_f4c) f5c=$(v_f5c)"
 clear

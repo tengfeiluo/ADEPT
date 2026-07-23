@@ -1,0 +1,54 @@
+universe = container
+# EDIT for your account (OSPool OSDF path to the published ADEPT image):
+container_image = osdf:///ospool/ap40/data/renzheng.zhang/containers/adept-v2.sqsh
+
+executable = run_adept.sh
+arguments  = $(task)
+
+# EDIT: absolute path to your ADEPT checkout on the access point
+initialdir = /home/renzheng.zhang/ADEPT
+
+preserve_relative_paths = True
+
+output = Log_Files/full.$(task).out
+error  = Log_Files/full.$(task).err
+log    = Log_Files/full.log
+
+# Streaming stdout/stderr can Hold jobs on some APs (HoldCode 9/22). Prefer OFF;
+# logs still return on exit/checkpoint via when_to_transfer_output = ON_EXIT.
+stream_output = False
+stream_error  = False
+
+request_cpus   = 16
+request_memory = 64GB
+request_disk   = 20GB
+
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+
+# Exit-driven self-checkpointing (OSPool): ADEPT_CKPT_BUDGET_SEC=0 => exit 85
+# after every completed pipeline step. HTCondor spools POLYMER_DATA, requeues the
+# same job, and the next execution skips finished steps (step_done_*).
+# Thermal conductivity (TC) is disabled here (DO_TC=0); use submit_TC.sub.
+checkpoint_exit_code      = 85
+transfer_checkpoint_files = POLYMER_DATA, checkpoint_status.$(task).txt
+
+transfer_input_files = run_adept.sh, setup_env.sh, SMILES.csv, Files, 1.AmorphousGeneration, 2.Simulations, 3.Analysis, container/fix_libint.sh, POLYMER_DATA_full/$(task)
+
+transfer_output_files = POLYMER_DATA, job_manifest.$(task).txt, checkpoint_status.$(task).txt, Log_Files/debug-agent.log
+
+transfer_output_remaps = "\
+  POLYMER_DATA = POLYMER_DATA_full/$(task)/POLYMER_DATA; \
+  job_manifest.$(task).txt = Log_Files/job_manifest.$(task).txt; \
+  checkpoint_status.$(task).txt = Log_Files/checkpoint_status.$(task).txt; \
+  Log_Files/debug-agent.log = Log_Files/debug-agent.$(task).log"
+
+environment = "NSLOTS=$(request_cpus) CHARGE_METHOD=GASTEIGER ADEPT_CHECKPOINT_MODE=exit85 ADEPT_CKPT_BUDGET_SEC=0 DO_APG=1 DO_OPT=1 DO_MONO_ELECTRONIC=1 DO_DC=1 DO_TC=0 DO_TG=1 DO_VISC=1 DO_EMD=1"
+
+# EDIT: your OSPool / PATh project name
++ProjectName = "ND_Luo"
++JobDurationCategory = "Long"
+
+requirements = (HAS_SINGULARITY == true)
+
+queue task from tasks_full.txt
