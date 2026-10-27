@@ -263,4 +263,17 @@ else
   echo "[SKIP] EMD disabled (DO_EMD=$DO_EMD)"
 fi
 
+# Step 9: Free Volume (Bondi FFV, gas-accessible volume, cavity size)
+if is_true "$DO_FFV"; then
+  echo "[RUN ] Free volume for $PID"
+  mkdir -p "POLYMER_DATA/FREE_VOLUME/$PID"
+  cd "POLYMER_DATA/FREE_VOLUME/$PID"
+  mpirun -n "$NSLOTS" lmp -in "../../../2.Simulations/lammps_ffv.in" -var name "$PID"
+  python "../../../3.Analysis/calc_FFV.py" "$PID"
+  python "../../../3.Analysis/update_FFV.py" "$PID"
+  cd "$initial_dir"
+else
+  echo "[SKIP] Free volume disabled (DO_FFV=$DO_FFV)"
+fi
+
 echo "Workflow complete for PID=$PID"

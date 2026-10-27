@@ -45,6 +45,7 @@ It is designed to run as array jobs on an HPC cluster, processing many polymers 
 | Thermal | Thermal conductivity, glass transition temperature (Tg), specific heat capacity (Cp), thermal diffusivity, volume/linear expansion coefficients |
 | Transport | Viscosity, diffusion coefficient, mean square displacement (MSD) |
 | Mechanical | Bulk modulus, shear modulus, Young's modulus, Poisson's ratio |
+| Free volume | Fractional free volume (Bondi), gas-accessible volume fraction (He, CO2, O2, N2, CH4), mean cavity radius |
 
 ## Repository Structure
 
@@ -62,6 +63,7 @@ ADEPT/
 │   ├── lammps_Tg.in            # Glass transition temperature
 │   ├── lammps_visc.in          # Viscosity
 │   ├── lammps_emd.in           # Thermodynamic/mechanical properties
+│   ├── lammps_ffv.in           # Free volume production run
 │   └── modulus_files/          # Elastic modulus LAMMPS templates
 ├── 3.Analysis/                 # Post-processing and property calculation
 │   ├── calc_*.py               # Compute properties from trajectories
@@ -163,6 +165,7 @@ All run settings live in `submit.sh`. Edit the property toggles to choose which 
 | `DO_TG` | Glass transition | Glass transition temperature (uses ML-predicted Tg as input to MD). |
 | `DO_VISC` | Viscosity | Viscosity, diffusion coefficient, and MSD. |
 | `DO_EMD` | Thermo/mechanical | Cp, thermal/volume/linear expansion, and mechanical moduli. |
+| `DO_FFV` | Free volume | Bondi FFV, gas-accessible volume fractions, and cavity size from a 2 ns NPT run. |
 
 Additional settings in `submit.sh`:
 
@@ -184,6 +187,7 @@ For each polymer (PID), `Files/files.sh` runs the enabled steps in order:
 6. **Glass Transition Temperature** — MD Tg, seeded with an ML-predicted Tg.
 7. **Viscosity** — viscosity and diffusion (prefers MD Tg, falls back to ML-predicted Tg).
 8. **EMD** — specific heat, expansion coefficients, and mechanical moduli.
+9. **Free Volume** — grid-based Bondi FFV, gas-accessible volume, and cavity size distribution.
 
 ## Output Files
 
@@ -198,6 +202,7 @@ POLYMER_DATA/
 ├── GLASS_TRANSITION/<PID>/
 ├── VISCOSITY/<PID>/
 ├── EMD/<PID>/
+├── FREE_VOLUME/<PID>/
 └── RESULTS/
     ├── RHO_MD.csv        # Density
     ├── RG_MD.csv         # Radius of gyration
@@ -225,7 +230,10 @@ POLYMER_DATA/
     ├── K_MD.csv          # Bulk modulus
     ├── G_MD.csv          # Shear modulus
     ├── E_MD.csv          # Young's modulus
-    └── NU_MD.csv         # Poisson's ratio
+    ├── NU_MD.csv         # Poisson's ratio
+    ├── FFV_MD.csv        # Fractional free volume (Bondi)
+    ├── FAV_HE_MD.csv     # He-accessible volume fraction (likewise FAV_CO2, FAV_O2, FAV_N2, FAV_CH4)
+    └── CAVR_MD.csv       # Mean cavity radius at the He probe (Å)
 ```
 
 The `RESULTS/` CSVs are keyed by `PID`, so results from many array tasks collect into a single table per property.

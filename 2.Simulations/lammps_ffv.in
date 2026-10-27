@@ -1,0 +1,38 @@
+log    ${name}_ffv.log
+####################################
+# Free volume production run
+####################################
+units		real
+atom_style	full
+boundary	p p p
+
+bond_style		harmonic
+angle_style		harmonic
+dihedral_style	fourier
+improper_style	cvff
+
+pair_style		lj/cut/coul/long 8.0 12.0
+pair_modify		mix arithmetic
+special_bonds	amber
+neighbor		3.0 bin
+neigh_modify	delay 0 every 1 check yes
+
+kspace_style	pppm 1e-4
+
+read_data       ../../OPTIMIZATION/${name}/${name}_eq2.data
+
+thermo			10000
+thermo_style	custom step temp press etotal pe vol density lx ly lz
+thermo_modify	flush yes
+
+timestep		1.0
+fix				SHAKE all shake 1e-4 1000 0 m 1.0
+fix				NPT all npt temp 300 300 $(100.0*dt) iso 1.0 1.0 $(1000.0*dt)
+
+# 2 ns at 300 K, one frame every 20 ps (calc_FFV.py samples the second half)
+dump			ffv all custom 20000 ${name}_ffv.lammpstrj id mol type xu yu zu
+run				2000000
+undump			ffv
+unfix			NPT
+unfix			SHAKE
+clear
