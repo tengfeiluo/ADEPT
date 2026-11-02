@@ -3,7 +3,8 @@
 # Usage: python update_FFV.py PID
 #
 # Reads calc_FFV.py result files in the *current directory*:
-#   {PID}_FFV_result.dat      -> FFV_MD.csv      (column: FFV)
+#   {PID}_FFV_result.dat      -> FFV_MD.csv      (column: FFV_BONDI)
+#   {PID}_FFV_GEOM_result.dat -> FFV_MD.csv      (column: FFV_GEOM)
 #   {PID}_FAV_HE_result.dat   -> FAV_HE_MD.csv   (column: FAV_HE)
 #   {PID}_FAV_CO2_result.dat  -> FAV_CO2_MD.csv  (column: FAV_CO2)
 #   {PID}_FAV_O2_result.dat   -> FAV_O2_MD.csv   (column: FAV_O2)
@@ -13,7 +14,8 @@
 #
 # Looks up SMILES for PID from ../../../SMILES.csv (expects headers: PID,SMILES)
 # Appends/updates CSVs under ../../RESULTS/
-# Schema: PID,SMILES,<VALUE_COL>
+# Schema: PID,SMILES,<VALUE_COL>[,<VALUE_COL>...]
+# A legacy FFV_MD.csv with a single FFV column is migrated to FFV_BONDI.
 
 import sys, csv, re
 from pathlib import Path
@@ -27,14 +29,15 @@ OUT_DIR    = Path("../../RESULTS")
 
 # Source → target mapping
 JOBS = [
-    # (source_file_pattern, out_csv_name, value_col_name)
-    ("{pid}_FFV_result.dat",     "FFV_MD.csv",     "FFV"),
-    ("{pid}_FAV_HE_result.dat",  "FAV_HE_MD.csv",  "FAV_HE"),
-    ("{pid}_FAV_CO2_result.dat", "FAV_CO2_MD.csv", "FAV_CO2"),
-    ("{pid}_FAV_O2_result.dat",  "FAV_O2_MD.csv",  "FAV_O2"),
-    ("{pid}_FAV_N2_result.dat",  "FAV_N2_MD.csv",  "FAV_N2"),
-    ("{pid}_FAV_CH4_result.dat", "FAV_CH4_MD.csv", "FAV_CH4"),
-    ("{pid}_CAVR_result.dat",    "CAVR_MD.csv",    "CAVR"),
+    # (out_csv_name, [(source_file_pattern, value_col_name), ...])
+    ("FFV_MD.csv",     [("{pid}_FFV_result.dat",      "FFV_BONDI"),
+                        ("{pid}_FFV_GEOM_result.dat", "FFV_GEOM")]),
+    ("FAV_HE_MD.csv",  [("{pid}_FAV_HE_result.dat",   "FAV_HE")]),
+    ("FAV_CO2_MD.csv", [("{pid}_FAV_CO2_result.dat",  "FAV_CO2")]),
+    ("FAV_O2_MD.csv",  [("{pid}_FAV_O2_result.dat",   "FAV_O2")]),
+    ("FAV_N2_MD.csv",  [("{pid}_FAV_N2_result.dat",   "FAV_N2")]),
+    ("FAV_CH4_MD.csv", [("{pid}_FAV_CH4_result.dat",  "FAV_CH4")]),
+    ("CAVR_MD.csv",    [("{pid}_CAVR_result.dat",     "CAVR")]),
 ]
 
 def usage():
@@ -61,44 +64,41 @@ def load_smiles(pid: str) -> str:
                 return (row.get(smi_key) or "").strip()
     return ""
 
-def upsert(csv_path: Path, pid: str, smiles: str, value: str, value_col: str):
+def upsert(csv_path: Path, pid: str, smiles: str, values: dict, value_cols: list):
     rows = []
     found = False
-    # Read existing (if any) and normalize to desired value_col
+    # Read existing (if any) and normalize to desired value_cols;
+    # columns not updated this run keep their old values
     if csv_path.exists():
         with csv_path.open(newline="", encoding="utf-8") as fh:
             rdr = csv.DictReader(fh)
-            existing_val_col = value_col
-            if rdr.fieldnames:
-                for c in rdr.fieldnames:
-                    if c not in (PID_COL, SMILES_COL):
-                        existing_val_col = c
-                        break
+            fields = rdr.fieldnames or []
+            # legacy file: map its first unknown value column onto value_cols[0]
+            src = {c: c for c in value_cols}
+            extra = [c for c in fields if c not in (PID_COL, SMILES_COL) and c not in value_cols]
+            if extra and value_cols[0] not in fields:
+                src[value_cols[0]] = extra[0]
             for row in rdr:
-                v = row.get(existing_val_col, "")
                 norm = {
                     PID_COL: (row.get(PID_COL) or "").strip(),
                     SMILES_COL: row.get(SMILES_COL) or "",
-                    value_col: v,
                 }
+                for c in value_cols:
+                    norm[c] = row.get(src[c]) or ""
                 if norm[PID_COL] == pid:
                     norm[SMILES_COL] = smiles
-                    norm[value_col] = value
+                    norm.update(values)
                     found = True
                 rows.append(norm)
     if not found:
-        rows.append({PID_COL: pid, SMILES_COL: smiles, value_col: value})
+        rows.append({PID_COL: pid, SMILES_COL: smiles, **values})
 
     tmp = csv_path.with_suffix(csv_path.suffix + ".tmp")
     with tmp.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=[PID_COL, SMILES_COL, value_col])
+        w = csv.DictWriter(fh, fieldnames=[PID_COL, SMILES_COL] + value_cols)
         w.writeheader()
         for row in rows:
-            w.writerow({
-                PID_COL: row.get(PID_COL, ""),
-                SMILES_COL: row.get(SMILES_COL, ""),
-                value_col: row.get(value_col, ""),
-            })
+            w.writerow({c: row.get(c, "") for c in [PID_COL, SMILES_COL] + value_cols})
     tmp.replace(csv_path)
 
 def main():
@@ -111,26 +111,29 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     smiles = load_smiles(pid)
 
-    for pattern, out_csv_name, value_col in JOBS:
-        src = Path(pattern.format(pid=pid))
-        if not src.exists():
-            print(f"[SKIP] {src.name}: not found")
-            continue
+    for out_csv_name, sources in JOBS:
+        values = {}
+        for pattern, value_col in sources:
+            src = Path(pattern.format(pid=pid))
+            if not src.exists():
+                print(f"[SKIP] {src.name}: not found")
+                continue
 
-        try:
-            text = src.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            print(f"[SKIP] {src.name}: cannot read")
-            continue
+            try:
+                text = src.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                print(f"[SKIP] {src.name}: cannot read")
+                continue
 
-        val = first_number(text)
-        if val is None:
-            print(f"[SKIP] {src.name}: no numeric value found")
-            continue
+            val = first_number(text)
+            if val is None:
+                print(f"[SKIP] {src.name}: no numeric value found")
+                continue
+            values[value_col] = val
+            print(f"[OK] {src.name} → {out_csv_name}: PID={pid} {value_col}={val}")
 
-        out_csv = OUT_DIR / out_csv_name
-        upsert(out_csv, pid, smiles, val, value_col)
-        print(f"[OK] {src.name} → {out_csv_name}: PID={pid} {value_col}={val}")
+        if values:
+            upsert(OUT_DIR / out_csv_name, pid, smiles, values, [c for _, c in sources])
 
 if __name__ == "__main__":
     main()

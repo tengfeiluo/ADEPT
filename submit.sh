@@ -94,7 +94,7 @@ DO_EMD=1
 #   ✅ Poisson ratio										(NU_MD.csv)
 
 DO_FFV=1    # Free volume (2 ns NPT at 300 K from PID_eq2.data):
-#   ✅ Fractional free volume (Bondi)						(FFV_MD.csv)
+#   ✅ Fractional free volume (Bondi + geometric)					(FFV_MD.csv)
 #   ✅ Accessible volume fraction: He, CO2, O2, N2, CH4		(FAV_HE_MD.csv, FAV_CO2_MD.csv, ...)
 #   ✅ Mean cavity radius (He probe)						(CAVR_MD.csv)
 #==============================================================

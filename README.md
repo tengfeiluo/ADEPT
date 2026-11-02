@@ -231,7 +231,7 @@ POLYMER_DATA/
     ├── G_MD.csv          # Shear modulus
     ├── E_MD.csv          # Young's modulus
     ├── NU_MD.csv         # Poisson's ratio
-    ├── FFV_MD.csv        # Fractional free volume (Bondi)
+    ├── FFV_MD.csv        # Fractional free volume (Bondi and geometric)
     ├── FAV_HE_MD.csv     # He-accessible volume fraction (likewise FAV_CO2, FAV_O2, FAV_N2, FAV_CH4)
     └── CAVR_MD.csv       # Mean cavity radius at the He probe (Å)
 ```

@@ -11,6 +11,7 @@
 # Grids each frame, computes the distance from every grid point to the nearest
 # atom SURFACE (PBC-aware), and writes:
 #   {PID}_FFV_result.dat         Bondi FFV = 1 - 1.3 Vw/V
+#   {PID}_FFV_GEOM_result.dat    geometric FFV = fraction of the cell outside all vdW spheres
 #   {PID}_FAV_<GAS>_result.dat   accessible volume fraction for a probe of that gas
 #                                (fraction of the cell a probe CENTRE can occupy)
 #   {PID}_CAVR_result.dat        equivalent-sphere radius (A) of the mean cavity at --cavity-probe
@@ -200,7 +201,7 @@ def main():
               f"<r>={res['cav_r_mean'][0]:.2f} A, r_max={res['cav_r_max'][0]:.2f} A")
 
     # one-number result files, picked up by update_FFV.py
-    results = {"FFV": res["FFV_bondi"][0]}
+    results = {"FFV": res["FFV_bondi"][0], "FFV_GEOM": res["accessible"]["geometric"][0]}
     for lab in PLABEL[1:]:
         results[f"FAV_{lab.upper()}"] = res["accessible"][lab][0]
     if "cav_r_mean" in res:
