@@ -263,14 +263,12 @@ if is_true "$DO_TG"; then
   if [[ -z "$TG_VAL" ]]; then
     echo "[SKIP] Tg: no Tg value predicted for PID=$PID → skipping Tg LAMMPS run."
   else
-    echo "[RUN ] Tg for $PID using ML Tg=${TG_VAL} K (as input to MD)"
-    mkdir -p "POLYMER_DATA/GLASS_TRANSITION/$PID"
-    cd "POLYMER_DATA/GLASS_TRANSITION/$PID"
-    run_lmp_mpi lmp -in "../../../2.Simulations/lammps_Tg.in" \
-          -var name "$PID" -var Tg_input "$TG_VAL"
-    python "../../../3.Analysis/calc_Tg.py" "$PID" "$TG_VAL"
-    python "../../../3.Analysis/update_Tg.py" "$PID"
-    cd "$initial_dir"
+    echo "[RUN ] Tg for $PID using ML Tg=${TG_VAL} K (resumable temperature-point chunks)"
+    # run_tg_lammps_resumable cds into the Tg dir, runs the scan in chunks of
+    # ADEPT_TG_CHUNK_POINTS temperature points, merges the per-chunk density
+    # files, analyzes, and exit-85 checkpoints between chunks so an eviction
+    # costs one chunk instead of the whole 31M-step scan.
+    run_tg_lammps_resumable "$PID" "$TG_VAL"
     checkpoint_barrier "tg"
   fi
   fi

@@ -1,5 +1,31 @@
 ###############################################################################
-# Tg Scan (NPT) — minimal, matched to your FF & data path (with Tmin clamp)
+# Tg Scan (NPT) — resumable in temperature-point chunks (OSPool eviction-safe)
+#
+# The scan is nsteps temperature points, each eq_steps + prod_steps long.
+# One invocation runs points [i_start, i_end] only, then writes a restart and a
+# progress sidecar. The bash driver (run_tg_lammps_resumable) exit-85
+# checkpoints between chunks so an eviction costs at most one chunk instead of
+# the whole 31M-step scan.
+#
+# Fresh start:  read_data + reset_timestep 0
+# Resume:       read_restart (atom positions/velocities/box)
+#
+# Command-line variables (set by Files/checkpoint.sh):
+#   name        PID string
+#   Tg_input    ML-predicted Tg (K)
+#   resume      0 = fresh, 1 = read_restart
+#   rstfile     restart file path (when resume=1)
+#   i_start     first temperature index this invocation runs (1-based)
+#   i_end       last temperature index this invocation runs (inclusive)
+#
+# Outputs for this invocation (merged by the bash driver afterwards):
+#   ${name}_tg_density.chunk.dat     appended to ${name}_tg_density.dat
+#   ${name}_tg_rstrt_end             restart for the next chunk
+#   ${name}_tg_progress.dat          "<next_index> <nsteps>"
+#
+# NOTE: chunks always end on a temperature-point boundary, so the merged
+# density file only ever contains whole points. A chunk killed mid-run leaves a
+# partial .chunk.dat, which the driver deletes before the next invocation.
 ###############################################################################
 
 # ---------------- User Vars (override via -var) ----------------
@@ -10,6 +36,7 @@ variable   prod_ns       equal 0.5
 variable   timestep_fs   equal 1
 
 # Expect: -var Tg_input <K> -var name <system>
+#         -var resume <0|1> -var rstfile <path> -var i_start <n> -var i_end <n>
 
 # ---------------- Derived (Tmin clamp via ternary, no spaces in expr) --------
 variable   Tmin         equal 50
@@ -43,17 +70,21 @@ angle_style     harmonic
 dihedral_style  fourier
 improper_style  cvff
 special_bonds   amber
-pair_modify     mix arithmetic
+pair_modify     mix arithmetic tail yes
 kspace_style    pppm 1e-6
 neighbor        3.0 bin
 neigh_modify    every 1 delay 0 check yes
 
-# Data
-read_data       ../../OPTIMIZATION/${name}/${name}_eq2.data
+# Data: fresh start reads the equilibrated structure; resume reads the restart
+# written at the end of the previous chunk.
+if "${resume} == 0" then &
+  "read_data ../../OPTIMIZATION/${name}/${name}_eq2.data" &
+  "reset_timestep 0" &
+else &
+  "read_restart ${rstfile}"
 
 # Integrator/timestep
 timestep        ${timestep_fs}
-reset_timestep  0
 
 # ---------------- Output (lean) ----------------
 thermo          1000
@@ -64,13 +95,20 @@ variable  myTemp     equal temp
 variable  myDensity  equal density
 variable  myPress    equal press
 variable  myVol      equal vol
-fix densout all ave/time 100 1 100 v_myTemp v_myDensity v_myPress v_myVol file ${name}_tg_density.dat
 
-# ---------------- Temperature loop ----------------
-variable i loop ${nsteps}
+# Per-chunk density file; the bash driver concatenates into ${name}_tg_density.dat.
+# calc_Tg.py reads that merged file with np.loadtxt(comments="#"), so the
+# per-chunk "#" headers are skipped automatically.
+fix densout all ave/time 100 1 100 v_myTemp v_myDensity v_myPress v_myVol file ${name}_tg_density.chunk.dat
+
+print "TG_RUN resume=${resume} rstfile=${rstfile} i_start=${i_start} i_end=${i_end} nsteps=${nsteps} step=$(step)"
+
+# ---------------- Temperature loop (this chunk only) ----------------
+variable i loop ${i_start} ${i_end}
 label    temp_loop
 
   variable currT equal ${tstart}-(${i}-1)*${tstep}
+  print "TG_POINT i=${i} T=${currT}K"
   fix tg_npt all npt temp ${currT} ${currT} 100.0 iso 1.0 1.0 1000.0
   run ${eq_steps}
   run ${prod_steps}
@@ -79,6 +117,15 @@ label    temp_loop
   next i
 jump SELF temp_loop
 
-# ---------------- Cleanup ----------------
+# ---------------- Cleanup + chunk handoff ----------------
 unfix densout
+
+# Restart for the next chunk / eviction recovery. Always on a point boundary.
+write_restart ${name}_tg_rstrt_end
+
+# Progress sidecar: next temperature index to run, and the total.
+variable next_i equal ${i_end}+1
+print "${next_i} ${nsteps}" file ${name}_tg_progress.dat screen no
+
+print "TG_DONE next_index=${next_i} nsteps=${nsteps} step=$(step)"
 clear

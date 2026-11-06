@@ -32,7 +32,7 @@ angle_style     harmonic
 dihedral_style  fourier
 improper_style  cvff
 special_bonds   amber
-pair_modify     mix arithmetic
+pair_modify     mix arithmetic tail yes
 
 # All of resume/rstfile/run_upto/total_steps MUST be supplied on the command
 # line by the bash driver (files.sh). tally offsets come from

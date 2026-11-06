@@ -71,6 +71,9 @@ step_is_done() {
         # even though TC_MD.csv is not written yet.
         tc_chunk)        tc_has_resume_artifacts "$pid" ;;
         tg)              step_done_tg "$pid" ;;
+        # Mid-Tg chunk checkpoint: allow exit 85 when the scan has produced
+        # restart/density progress even though TG_MD.csv is not written yet.
+        tg_chunk)        tg_has_resume_artifacts "$pid" ;;
         visc)            step_done_visc "$pid" ;;
         emd)             step_done_emd "$pid" ;;
         *)               return 0 ;;
@@ -441,5 +444,190 @@ run_lammps_opt_for_pid() {
         fi
     fi
 
+    cd "$initial_dir"
+}
+
+# ---------------------------------------------------------------------------
+# Tg: resumable temperature-point chunks (mirrors the TC pattern above).
+#
+# The Tg scan is a loop over N temperature points, each eq_steps + prod_steps
+# long (default 31 points x 1M steps = 31M steps). lammps_Tg.in runs only
+# points [i_start, i_end] per invocation, so an OSPool eviction costs at most
+# one chunk instead of the entire scan. Chunks always end on a temperature-
+# point boundary, so the merged density file only holds whole points.
+#
+# Tunable: ADEPT_TG_CHUNK_POINTS (default 2 temperature points per chunk).
+# ---------------------------------------------------------------------------
+
+# Temperature-point count for a given ML Tg. MUST mirror the arithmetic in
+# 2.Simulations/lammps_Tg.in (scan_range=150, tstep=10, Tmin=50).
+tg_num_points() {
+    local tg_val="$1"
+    awk -v tg="$tg_val" 'BEGIN {
+        scan_range = 150; tstep = 10; tmin = 50;
+        tstart = tg + scan_range;
+        tend_raw = tg - scan_range;
+        tend = (tend_raw > tmin) ? tend_raw : tmin;
+        n = int((tstart - tend) / tstep + 1);
+        if (n < 1) n = 1;
+        print n;
+    }'
+}
+
+# True if Tg has mid-run artifacts worth checkpointing / resuming from.
+tg_has_resume_artifacts() {
+    local pid="$1"
+    local tg_dir="${initial_dir}/POLYMER_DATA/GLASS_TRANSITION/${pid}"
+    [[ -f "${tg_dir}/${pid}_tg_density.dat" ]] || \
+        [[ -f "${tg_dir}/${pid}_tg_progress.dat" ]] || \
+        [[ -f "${tg_dir}/${pid}_tg_rstrt_end" ]]
+}
+
+# Restart file written at the last chunk boundary, or empty if none.
+tg_pick_restart_file() {
+    local pid="$1"
+    local tg_dir="${initial_dir}/POLYMER_DATA/GLASS_TRANSITION/${pid}"
+    local f="${tg_dir}/${pid}_tg_rstrt_end"
+    if [[ -f "$f" ]]; then echo "$f"; else echo ""; fi
+}
+
+# Next temperature index to run (1-based). Source of truth is the progress
+# sidecar written by lammps_Tg.in at each chunk boundary.
+tg_next_index() {
+    local pid="$1"
+    local tg_dir="${initial_dir}/POLYMER_DATA/GLASS_TRANSITION/${pid}"
+    local prog="${tg_dir}/${pid}_tg_progress.dat"
+    if [[ -s "$prog" ]]; then
+        awk 'NF >= 1 { n = $1 + 0 } END { if (NR == 0 || n < 1) print 1; else print n }' "$prog"
+    else
+        echo 1
+    fi
+}
+
+# Append this chunk's density rows to the cumulative file that calc_Tg.py reads.
+# np.loadtxt(comments="#") skips the per-chunk headers, so plain concatenation
+# is safe.
+tg_merge_chunk_outputs() {
+    local pid="$1"
+    local tg_dir="${initial_dir}/POLYMER_DATA/GLASS_TRANSITION/${pid}"
+    local chunk="${tg_dir}/${pid}_tg_density.chunk.dat"
+    local merged="${tg_dir}/${pid}_tg_density.dat"
+
+    if [[ -s "$chunk" ]]; then
+        if [[ ! -s "$merged" ]]; then
+            cp -f "$chunk" "$merged"
+        else
+            cat "$chunk" >> "$merged"
+        fi
+        echo "[TG] merged density chunk -> ${pid}_tg_density.dat"
+    else
+        echo "[TG][WARN] missing chunk density file: $chunk"
+    fi
+}
+
+# Run the Tg scan in resumable chunks; exit 85 between chunks when checkpointing.
+run_tg_lammps_resumable() {
+    local pid="$1" tg_val="$2"
+    local chunk="${ADEPT_TG_CHUNK_POINTS:-2}"
+    local tg_dir="${initial_dir}/POLYMER_DATA/GLASS_TRANSITION/${pid}"
+    local tg_in="${initial_dir}/2.Simulations/lammps_Tg.in"
+    local total i_start i_end resume rst next
+    local last_start=-1
+
+    total="$(tg_num_points "$tg_val")"
+    # Self-contained numeric checks: do not depend on is_number() being sourced,
+    # because a missing helper here would silently reset the scan index to 1 and
+    # loop forever.
+    [[ "$chunk" =~ ^[0-9]+$ ]] || chunk=2
+    (( chunk >= 1 )) || chunk=1
+
+    mkdir -p "$tg_dir"
+    cd "$tg_dir"
+
+    while true; do
+        if step_done_tg "$pid"; then
+            echo "[TG] already complete for $pid"
+            cd "$initial_dir"
+            return 0
+        fi
+
+        i_start="$(tg_next_index "$pid")"
+        [[ "$i_start" =~ ^[0-9]+$ ]] || i_start=1
+
+        # Hard loop guard: the starting index must strictly advance on every
+        # iteration. Without this, a malformed/unwritable progress file makes
+        # the driver re-run the same temperature points forever, burning the
+        # whole 40h wall limit with nothing to show.
+        if (( last_start >= 0 && i_start <= last_start )); then
+            echo "[TG][ERROR] scan index did not advance (i_start=${i_start}, previous=${last_start}); aborting Tg to avoid an infinite loop"
+            cd "$initial_dir"
+            return 1
+        fi
+        last_start=$i_start
+
+        if (( i_start > total )); then
+            echo "[TG] all ${total} temperature points done; running analysis"
+            break
+        fi
+
+        rst="$(tg_pick_restart_file "$pid")"
+        if [[ -n "$rst" && "$i_start" -gt 1 ]]; then
+            resume=1
+        else
+            resume=0
+            rst=none
+            # Progress without a restart to continue from: start the scan over
+            # rather than splice incompatible density series together.
+            if (( i_start > 1 )); then
+                echo "[TG][WARN] progress at index ${i_start} but no restart file; restarting Tg scan from scratch"
+                rm -f "${pid}_tg_density.dat" "${pid}_tg_density.chunk.dat" "${pid}_tg_progress.dat"
+                i_start=1
+            fi
+        fi
+
+        i_end=$(( i_start + chunk - 1 ))
+        (( i_end > total )) && i_end=$total
+
+        echo "[TG] chunk resume=${resume} points ${i_start}..${i_end} of ${total} rst=${rst}"
+
+        # Drop any partial chunk left by a killed invocation so only whole
+        # temperature points ever reach the merged density file.
+        rm -f "${pid}_tg_density.chunk.dat"
+
+        run_lmp_mpi lmp -in "$tg_in" \
+            -var name "$pid" \
+            -var Tg_input "$tg_val" \
+            -var resume "$resume" \
+            -var rstfile "$rst" \
+            -var i_start "$i_start" \
+            -var i_end "$i_end"
+
+        tg_merge_chunk_outputs "$pid"
+
+        next="$(tg_next_index "$pid")"
+        echo "[TG] after chunk: next index ${next} / ${total}"
+
+        if (( next > total )); then
+            break
+        fi
+
+        # Guard against a chunk that failed to advance the index, which would
+        # otherwise spin forever re-running the same temperature points.
+        if (( next <= i_start )); then
+            echo "[TG][ERROR] chunk did not advance (next=${next}, i_start=${i_start}); aborting Tg"
+            cd "$initial_dir"
+            return 1
+        fi
+
+        # Persist mid-Tg progress via HTCondor exit-85 self-checkpoint.
+        cd "$initial_dir"
+        checkpoint_barrier "tg_chunk"
+        cd "$tg_dir"
+        # If barrier did not exit (checkpoint mode off), continue next chunk in-process.
+    done
+
+    echo "[RUN ] Tg analysis for $pid"
+    python "${initial_dir}/3.Analysis/calc_Tg.py" "$pid" "$tg_val"
+    python "${initial_dir}/3.Analysis/update_Tg.py" "$pid"
     cd "$initial_dir"
 }
