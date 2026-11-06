@@ -21,6 +21,9 @@ natoms = 600
 replica = 6
 density = 0.01
 charge_type = "resp"
+CHARGE_SCHEME = os.environ.get("ADEPT_CHARGE_SCHEME", "RESP").upper()   # RESP | ESP  (added 2026-10-17)
+SCHEME_QM = {"RESP": dict(charge_method="HF", charge_basis="6-31G*", restraint=True),
+             "ESP":  dict(charge_method="wB97X-D", charge_basis="def2-TZVP", restraint=False)}[CHARGE_SCHEME]
 
 ch3_charges = np.array([-0.54422096, 0.18133882, 0.18154373, 0.18133841])
 ch3_positions = [
@@ -169,17 +172,21 @@ def assign_resp_charges(
             'RESP_B': 0.1,
             'VDW_SCALE_FACTORS': [1.4, 1.6, 1.8, 2.0],
             'VDW_POINT_DENSITY': 1.0,
+            'RESTRAINT': SCHEME_QM['restraint'],
+            'METHOD_ESP': SCHEME_QM['charge_method'],
+            'BASIS_ESP': SCHEME_QM['charge_basis'],
         }
         charges = resp.resp([psi4_mol], options)
+        qfit = charges[1] if SCHEME_QM['restraint'] else charges[0]   # restraint off -> plugin returns only the ESP set
 
         # Step 6: Verify and Assign RESP charges to PySIMM particles
-        if len(charges[1]) != len(pysimm_obj.particles):
+        if len(qfit) != len(pysimm_obj.particles):
             raise ValueError(
-                f"RESP charges ({len(charges[1])}) do not match PySIMM particles ({len(pysimm_obj.particles)})."
+                f"RESP charges ({len(qfit)}) do not match PySIMM particles ({len(pysimm_obj.particles)})."
             )
 
         for i, particle in enumerate(pysimm_obj.particles):
-            particle.charge = charges[1][i]
+            particle.charge = qfit[i]
 
         print(f"RESP charges successfully assigned to PySIMM particles.")
         return pysimm_obj  # Return updated PySIMM object with RESP charges and geometry (if optimized)
@@ -204,15 +211,29 @@ def PolymerGen(mol_file, head, tail, length=20, natoms=None, density=0.1, nproc=
     p_head.linker = 'head'
     p_tail.linker = 'tail'
 
+    # --- 2026-10-17: fit charges on the closed-shell, H-capped monomer (not the open-valence repeat unit),
+    #     then fold each removed cap-H charge onto its head/tail atom so the repeat unit stays neutral ---
+    qmap = None
+    if charge_type == "resp":
+        p_head.linker = None; p_tail.linker = None   # linker flag adds a phantom bond in GAFF2 typing; capped monomer has none
+        f0 = forcefield.Gaff2(); s.apply_forcefield(f0)
+        s = assign_resp_charges(pysimm_obj=s, output_xyz="monomer_capped.xyz", nproc=nproc, opt=True, total_multiplicity=1)
+        if s is None: raise RuntimeError("RESP/ESP charge fit failed on the capped monomer")
+        qmap = True
+        for pp in s.particles: pp._qfit = pp.charge   # keyed on the object; tags get renumbered after H removal
+        p_head = s.particles[head]; p_tail = s.particles[tail]; p_head.linker = 'head'; p_tail.linker = 'tail'
+
     for b in p_head.bonds:
         if b.a.elem == 'H' or b.b.elem == 'H':
             pb = b.a if b.b is p_head else b.b 
+            if qmap is not None: p_head._qfit += pb._qfit
             s.particles.remove(pb.tag, update=False)
             break
 
     for b in p_tail.bonds:
         if b.a.elem == 'H' or b.b.elem == 'H':
             pb = b.a if b.b is p_tail else b.b 
+            if qmap is not None: p_tail._qfit += pb._qfit
             s.particles.remove(pb.tag, update=False)
             break
 
@@ -226,8 +247,9 @@ def PolymerGen(mol_file, head, tail, length=20, natoms=None, density=0.1, nproc=
     s.add_particle_bonding()
     
     if charge_type == "resp":
-        # Use RESP charge assignment
-        s = assign_resp_charges(pysimm_obj=s,output_xyz="monomer.xyz",nproc=nproc,opt=True,total_multiplicity=1)
+        # charges were fitted on the capped monomer above; re-apply after typing
+        for pp in s.particles: pp.charge = pp._qfit
+        print(f"[{CHARGE_SCHEME}] repeat-unit charge sum = {sum(pp.charge for pp in s.particles):+.6f}", flush=True)
     
     else:
         # Use Gasteiger charge assignment

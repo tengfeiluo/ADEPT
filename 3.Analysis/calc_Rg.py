@@ -1,25 +1,35 @@
 import os
 import sys
 
-def extract_last_rg_values(pid_file, start_line=5598, end_line=5603):
-    with open(pid_file, 'r') as file:
-        lines = file.readlines()
-
-    # Extract the specified lines
-    data_lines = lines[start_line - 1:end_line]
-
-    if not data_lines or len(data_lines) != (end_line - start_line + 1):
-        print("Error: Specified lines are not valid or incomplete.")
+def extract_last_rg_values(pid_file, start_line=None, end_line=None):
+    """Mean Rg of the LAST fix ave/time block (2026-10-24). Parses blocks instead of fixed line numbers, so it is
+    unchanged for a standard 8 ns file (last block = lines 5598-5603) and also correct when the file was appended
+    across resumable eq2 chunks (extra '#' header lines) or the hold length differs."""
+    with open(pid_file, 'r') as f:
+        lines = [l.split() for l in f if l.strip() and not l.lstrip().startswith('#')]
+    i, last = 0, None
+    while i < len(lines):
+        t = lines[i]
+        if len(t) == 2:
+            try:
+                nrows = int(t[1])
+            except ValueError:
+                i += 1; continue
+            block = lines[i + 1:i + 1 + nrows]
+            if len(block) == nrows:
+                last = block
+            i += 1 + nrows
+        else:
+            i += 1
+    if not last:
+        print("Error: no complete Rg block found.")
         return None
-
     try:
-        rg_values = [float(line.strip().split()[1]) for line in data_lines]
+        rg_values = [float(r[1]) for r in last]
     except (ValueError, IndexError) as e:
         print(f"Error parsing Rg values: {e}")
         return None
-
-    rg_mean = sum(rg_values) / len(rg_values)
-    return rg_mean
+    return sum(rg_values) / len(rg_values)
 
 
 def process_rg_results(pid):

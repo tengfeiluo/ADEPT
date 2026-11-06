@@ -74,6 +74,8 @@ step_is_done() {
         # Mid-Tg chunk checkpoint: allow exit 85 when the scan has produced
         # restart/density progress even though TG_MD.csv is not written yet.
         tg_chunk)        tg_has_resume_artifacts "$pid" ;;
+        # Mid-eq2 chunk checkpoint (resumable cooling ramp / hold).
+        eq2_chunk)       eq2_has_resume_artifacts "$pid" ;;
         visc)            step_done_visc "$pid" ;;
         emd)             step_done_emd "$pid" ;;
         *)               return 0 ;;
@@ -427,8 +429,13 @@ run_lammps_opt_for_pid() {
         fi
 
         if [[ -f "${pid}_eq1.data" ]]; then
-            echo "[RUN ] eq2 for ${pid}"
-            run_lmp_mpi lmp -in "$eq2_in" -var name "$pid"
+            if is_true "${ADEPT_EQ2_RESUMABLE:-0}"; then
+                echo "[RUN ] eq2 (resumable chunks) for ${pid}"
+                run_eq2_resumable "$pid"
+            else
+                echo "[RUN ] eq2 for ${pid}"
+                run_lmp_mpi lmp -in "$eq2_in" -var name "$pid"
+            fi
         else
             echo "[WARN] eq1 did not produce ${pid}_eq1.data; skipping eq2"
         fi
@@ -630,4 +637,70 @@ run_tg_lammps_resumable() {
     python "${initial_dir}/3.Analysis/calc_Tg.py" "$pid" "$tg_val"
     python "${initial_dir}/3.Analysis/update_Tg.py" "$pid"
     cd "$initial_dir"
+}
+
+# ---------------------------------------------------------------------------
+# eq2: resumable chunks (2026-10-24). Mirrors the TC/Tg pattern: each invocation runs one chunk of the
+# 1000->300 K ramp or the 300 K hold from the newest restart, then exits 85 so HTCondor spools the
+# restart. An eviction costs at most one chunk. Enabled with ADEPT_EQ2_RESUMABLE=1.
+# Tunables: ADEPT_EQ2_RAMP_STEPS (5000000) ADEPT_EQ2_HOLD_STEPS (8000000) ADEPT_EQ2_CHUNK_STEPS (5000000);
+# ADEPT_EQ2_SEG_STEPS (100000, the PPPM-rebuild segment); ramp/hold/chunk must be multiples of it.
+# ---------------------------------------------------------------------------
+eq2_has_resume_artifacts() {
+    local pid="$1"
+    [[ -f "${initial_dir}/POLYMER_DATA/OPTIMIZATION/${pid}/${pid}_eq2_end.rst" ]]
+}
+
+run_eq2_resumable() {
+    local pid="$1"
+    local ramp="${ADEPT_EQ2_RAMP_STEPS:-5000000}"
+    local hold="${ADEPT_EQ2_HOLD_STEPS:-8000000}"
+    local chunk="${ADEPT_EQ2_CHUNK_STEPS:-5000000}"
+    local seg="${ADEPT_EQ2_SEG_STEPS:-100000}"
+    local total=$(( ramp + hold ))
+    local eq2_in="${initial_dir}/2.Simulations/lammps_eq2_resume.in"
+    local step resume rst phase upto
+    # NOTE: runs under the caller's `set -euo pipefail` -- every test is an explicit if, and no pipeline may fail.
+    while true; do
+        if [[ -f "${pid}_eq2.data" ]]; then echo "[EQ2] complete for ${pid}"; return 0; fi
+        step=0
+        if [[ -f "${pid}_eq2_progress.dat" ]]; then
+            step="$(awk 'NF {v=$1} END {print v+0}' "${pid}_eq2_progress.dat")"
+        fi
+        if ! is_number "$step"; then step=0; fi
+        if [[ -f "${pid}_eq2_end.rst" && "$step" -gt 0 ]]; then
+            resume=1; rst="${pid}_eq2_end.rst"
+        else
+            resume=0; rst=none; step=0
+            rm -f "${pid}_eq2_progress.dat" "${pid}_density.dat" "${pid}_Rg.data" "${pid}_eq2.log"
+        fi
+        if (( step < ramp )); then
+            phase=1; upto=$(( step + chunk ))
+            if (( upto > ramp )); then upto=$ramp; fi
+        else
+            phase=2; upto=$(( step + chunk ))
+            if (( upto > total )); then upto=$total; fi
+        fi
+        echo "[EQ2] chunk resume=${resume} step=${step} -> ${upto} phase=${phase} (ramp=${ramp} total=${total})"
+        # A crashed chunk (e.g. PPPM "Out of range atoms") is retried from the last saved restart with one fewer
+        # MPI rank: the crash is deterministic for a fixed restart + decomposition, a new decomposition is not.
+        local try=0 np_try="$NSLOTS" nd=0 nr=0
+        # remember output lengths so a retried chunk does not duplicate density / Rg lines
+        if [[ -f "${pid}_density.dat" ]]; then nd=$(wc -l < "${pid}_density.dat"); fi
+        if [[ -f "${pid}_Rg.data" ]]; then nr=$(wc -l < "${pid}_Rg.data"); fi
+        until NSLOTS="$np_try" run_lmp_mpi lmp -in "$eq2_in" -var name "$pid" -var resume "$resume" -var rstfile "$rst" \
+                -var phase "$phase" -var run_upto "$upto" -var ramp_steps "$ramp" -var total_steps "$total" \
+                -var incdir "${initial_dir}/2.Simulations" -var seg "$seg"; do
+            try=$(( try + 1 ))
+            if (( try > 2 )); then echo "[EQ2][ERROR] chunk failed 3 times for ${pid}"; return 1; fi
+            np_try=$(( NSLOTS - try ))
+            if [[ -f "${pid}_density.dat" ]]; then head -n "$nd" "${pid}_density.dat" > "${pid}_density.tmp" && mv "${pid}_density.tmp" "${pid}_density.dat"; fi
+            if [[ -f "${pid}_Rg.data" ]]; then head -n "$nr" "${pid}_Rg.data" > "${pid}_Rg.tmp" && mv "${pid}_Rg.tmp" "${pid}_Rg.data"; fi
+            echo "[EQ2][WARN] chunk failed (attempt ${try}); retrying from ${rst} with ${np_try} ranks"
+        done
+        if [[ -f "${pid}_eq2.data" ]]; then echo "[EQ2] complete for ${pid}"; return 0; fi
+        cd "$initial_dir"
+        checkpoint_barrier "eq2_chunk"
+        cd "${initial_dir}/POLYMER_DATA/OPTIMIZATION/${pid}"
+    done
 }
