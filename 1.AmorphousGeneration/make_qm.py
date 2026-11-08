@@ -1,4 +1,5 @@
 # Build APG_qm.py = APG_gas.py (hardened typing) + QM (RESP/ESP) monomer charges. 2026-10-17
+# NOTE: APG_qm.py has hand edits after generation (2026-11-08 explicit [3H] cap removal); do not regenerate blindly.
 import re
 gas = open('APG_gas.py').read(); resp = open('APG_resp.py').read()
 fn = resp[resp.index('def assign_resp_charges('):resp.index('def PolymerGen(')]

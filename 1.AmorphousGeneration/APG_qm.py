@@ -475,6 +475,27 @@ def GetHeadTailAtoms(mol_file):
         raise ValueError(f'Expected 2 labeled head/tail atoms, found {len(idx_list)}')
     return idx_list
 
+def GetCapHydrogens(mol_file):
+    """{head/tail atom tag: tag of its [3H] cap} (pysimm tag = RDKit index + 1, as in GetHeadTailAtoms)."""
+    mol = Chem.MolFromMolFile(mol_file, removeHs=False)
+    return {a.GetNeighbors()[0].GetIdx() + 1: a.GetIdx() + 1
+            for a in mol.GetAtoms() if a.GetSymbol() == "H" and a.GetIsotope() == 3}
+
+
+def remove_cap_fold_charge(s, p_end, cap_tag):
+    """Remove the tagged cap H bonded to p_end and fold its fitted charge onto p_end (2026-11-08).
+    Falls back to the first bonded H (old behavior) if the tag is missing or not bonded to p_end."""
+    nbrs = [b.a if b.b is p_end else b.b for b in p_end.bonds]
+    pb = next((q for q in nbrs if q.tag == cap_tag and q.elem == 'H'), None)
+    if pb is None:
+        pb = next((q for q in nbrs if q.elem == 'H'), None)
+        log_charge_event('cap', f'tagged cap H {cap_tag} not bonded to atom {p_end.tag}; removed first bonded H instead')
+    if pb is None:
+        raise RuntimeError(f'no H bonded to linker atom {p_end.tag}')
+    p_end._qfit += pb._qfit
+    s.particles.remove(pb.tag, update=False)
+
+
 def assign_resp_charges(
     pysimm_obj,
     output_xyz="output.xyz",
@@ -609,19 +630,10 @@ def PolymerGen(mol_file, head, tail, length=20, natoms=None, density=0.1, nproc=
         pp._qfit = pp.charge
     p_head = s.particles[head]; p_tail = s.particles[tail]
 
-    for b in p_head.bonds:
-        if b.a.elem == 'H' or b.b.elem == 'H':
-            pb = b.a if b.b is p_head else b.b 
-            p_head._qfit += pb._qfit
-            s.particles.remove(pb.tag, update=False)
-            break
-
-    for b in p_tail.bonds:
-        if b.a.elem == 'H' or b.b.elem == 'H':
-            pb = b.a if b.b is p_tail else b.b 
-            p_tail._qfit += pb._qfit
-            s.particles.remove(pb.tag, update=False)
-            break
+    # remove exactly the [3H] caps from the MOL file, not just the first H bonded to each linker atom
+    cap_of = GetCapHydrogens(mol_file)
+    remove_cap_fold_charge(s, p_head, cap_of.get(head))
+    remove_cap_fold_charge(s, p_tail, cap_of.get(tail))
 
     s.remove_spare_bonding()
 
