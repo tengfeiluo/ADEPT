@@ -124,9 +124,10 @@ if is_true "$DO_APG"; then
   method_norm="$(echo "$CHARGE_METHOD" | tr '[:lower:]' '[:upper:]')"
   case "$method_norm" in
     RESP)      apg_script="APG_qm.py"; export ADEPT_CHARGE_SCHEME=RESP ;;
+    ESP)       apg_script="APG_qm.py"; export ADEPT_CHARGE_SCHEME=ESP ;;
     GASTEIGER) apg_script="APG_gas.py"  ;;
     *)
-      echo "[ERROR] CHARGE_METHOD must be RESP or GASTEIGER (got: '$CHARGE_METHOD')"
+      echo "[ERROR] CHARGE_METHOD must be RESP, ESP or GASTEIGER (got: '$CHARGE_METHOD')"
       exit 1
       ;;
   esac
@@ -261,19 +262,6 @@ if is_true "$DO_EMD"; then
   cd "$initial_dir"
 else
   echo "[SKIP] EMD disabled (DO_EMD=$DO_EMD)"
-fi
-
-# Step 9: Free Volume (Bondi FFV, gas-accessible volume, cavity size)
-if is_true "$DO_FFV"; then
-  echo "[RUN ] Free volume for $PID"
-  mkdir -p "POLYMER_DATA/FREE_VOLUME/$PID"
-  cd "POLYMER_DATA/FREE_VOLUME/$PID"
-  mpirun -n "$NSLOTS" lmp -in "../../../2.Simulations/lammps_ffv.in" -var name "$PID"
-  python "../../../3.Analysis/calc_FFV.py" "$PID"
-  python "../../../3.Analysis/update_FFV.py" "$PID"
-  cd "$initial_dir"
-else
-  echo "[SKIP] Free volume disabled (DO_FFV=$DO_FFV)"
 fi
 
 echo "Workflow complete for PID=$PID"

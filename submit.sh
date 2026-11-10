@@ -46,9 +46,10 @@ SMILES_FILE="SMILES.csv"
 DO_APG=1    # Amorphous generation:
 #   ✅ Build amorphous polymer structure (.lmps)
 	# --- Charge method for APG (choose one) ---
-	CHARGE_METHOD="RESP"     # Options: "RESP" or "GASTEIGER" 
+	CHARGE_METHOD="RESP"     # Options: "RESP" or "GASTEIGER" or "ESP"
 								  #(Use RESP if Dielectric Constant is calculating)
 								  # Note: RESP is time consuming compared to GASTEIGER
+								  # ESP for comparison
 
 DO_OPT=1    # Optimization / Equilibration:					(Output Files: POLYMER_DATA/RESULTS)
 #   ✅ Equilibration runs 									(POLYMER_DATA/OPTIMIZATION/PID/PID_eq1.data, PID_eq2.data)
