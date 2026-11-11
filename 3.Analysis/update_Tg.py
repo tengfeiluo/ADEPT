@@ -2,11 +2,12 @@
 # Usage: python update_tg_csv.py PID
 
 import sys, csv, re
+import os
 from pathlib import Path
 
 PID_COL, SMILES_COL, VALUE_COL = "PID", "SMILES", "TG"
-SMILES_CSV = Path("../../..") / "SMILES.csv"   # from POLYMER_DATA/GLASS_TRANSITION/<PID>/
-OUT_DIR    = Path("../../RESULTS")
+SMILES_CSV = Path(os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)"))  # set in submit.sh
+OUT_DIR    = Path("../../RESULTS") # relative to POLYMER_DATA/GLASS_TRANSITION/<PID>/
 OUT_CSV    = OUT_DIR / "TG_MD.csv"
 FLOAT_RE   = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
 

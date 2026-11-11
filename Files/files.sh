@@ -7,6 +7,13 @@
 # Use initial_dir from environment (set in submit.sh), or fall back to current dir
 initial_dir="${initial_dir:-$PWD}"
 
+# SMILES_FILE is set (as an absolute path) and exported by submit.sh
+if [[ -z "${SMILES_FILE:-}" || ! -f "$SMILES_FILE" ]]; then
+  echo "[ERROR] SMILES file not found: '${SMILES_FILE:-}' (set SMILES_FILE in submit.sh)"
+  exit 1
+fi
+echo "[INFO] Using SMILES file: $SMILES_FILE"
+
 # ---------------- Helpers ----------------
 is_true() {
   case "$(echo "${1:-0}" | tr '[:upper:]' '[:lower:]')" in
@@ -97,7 +104,7 @@ get_tg_md_for_pid() {
 if [[ -n "${PID:-}" ]]; then
   echo "[INFO] PID already set (${PID}); running workflow."
 else
-  # CSV mode: require SGE_TASK_ID and map it to SMILES.csv
+  # CSV mode: require SGE_TASK_ID and map it to a row of $SMILES_FILE
   if [[ -z "${SGE_TASK_ID:-}" ]]; then
     echo "[ERROR] No PID and no SGE_TASK_ID found."
     echo "       Submit as an array job, e.g.: qsub -t 1-N submit.sh"

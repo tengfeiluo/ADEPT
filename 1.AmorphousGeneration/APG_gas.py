@@ -11,7 +11,7 @@ from pysimm import system, lmps, forcefield
 from pysimm.apps.random_walk import random_walk, copolymer
 
 nproc = 6
-smiles_csv = "../SMILES.csv"
+smiles_csv = os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)")
 mol_file_dir = "./test/"
 mol_file_gen = True
 charge_method = os.environ.get('APG_CHARGE_METHOD', 'rdkit_gasteiger').strip().lower()
@@ -667,7 +667,7 @@ if mol_file_gen:
                 break  # Stop after processing the matching PID
                 
         if not data_found:
-            print(f"PID {gen_pid} not found in SMILES.csv")
+            print(f"PID {gen_pid} not found in {smiles_csv}")
 
 # Proceed with the rest of the script for generating polymers and amorphous structures...
 

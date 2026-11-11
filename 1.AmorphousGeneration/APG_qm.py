@@ -12,7 +12,7 @@ from pysimm.apps.random_walk import random_walk, copolymer
 import numpy as np
 
 nproc = 6
-smiles_csv = "../SMILES.csv"
+smiles_csv = os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)")
 mol_file_dir = "./test/"
 mol_file_gen = True
 charge_method = os.environ.get('APG_CHARGE_METHOD', 'rdkit_gasteiger').strip().lower()

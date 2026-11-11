@@ -3,14 +3,14 @@
 # Example: python update_props_csv.py P010003
 
 import sys, csv, re
+import os
 from pathlib import Path
 
 # --- Column names (fixed) ---
 PID_COL, SMILES_COL = "PID", "SMILES"
 
-# --- Locations (relative to POLYMER_DATA/DIELECTRIC_CONSTANT/<PID>/) ---
-SMILES_CSV = Path("../../..") / "SMILES.csv"   # up to the project root
-OUT_DIR    = Path("../../RESULTS")             # results directory
+SMILES_CSV = Path(os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)"))  # set in submit.sh
+OUT_DIR    = Path("../../RESULTS") # relative to POLYMER_DATA/DIELECTRIC_CONSTANT/<PID>/
 
 # --- Regex to grab the first float in a text file ---
 FLOAT_RE = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")

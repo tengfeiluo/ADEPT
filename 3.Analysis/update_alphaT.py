@@ -13,11 +13,12 @@
 #   - ALPHAT_MD.csv  (PID, SMILES, ALPHAT)  [m^2/s]
 
 import sys, csv
+import os
 from pathlib import Path
 from typing import Set, Optional
 
-RESULTS_DIR = Path("../../RESULTS")
-SMILES_CSV  = Path("../../..") / "SMILES.csv"
+RESULTS_DIR = Path("../../RESULTS") # relative to POLYMER_DATA/EMD/<PID>/
+SMILES_CSV  = Path(os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)"))  # set in submit.sh
 
 CP_CSV    = RESULTS_DIR / "CP_MD.csv"
 TC_CSV    = RESULTS_DIR / "TC_MD.csv"

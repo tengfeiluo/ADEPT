@@ -12,7 +12,7 @@
 #   {PID}_FAV_CH4_result.dat  -> FAV_CH4_MD.csv  (column: FAV_CH4)
 #   {PID}_CAVR_result.dat     -> CAVR_MD.csv     (column: CAVR)
 #
-# Looks up SMILES for PID from ../../../SMILES.csv (expects headers: PID,SMILES)
+# Looks up SMILES for PID from $SMILES_FILE, set in submit.sh (expects headers: PID,SMILES)
 # Appends/updates CSVs under ../../RESULTS/
 # Schema: PID,SMILES,<VALUE_COL>[,<VALUE_COL>...]
 # A legacy FFV_MD.csv with a single FFV column is migrated to FFV_BONDI.
@@ -23,9 +23,8 @@ from pathlib import Path
 PID_COL, SMILES_COL = "PID", "SMILES"
 FLOAT_RE = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
 
-# Fixed locations (relative to POLYMER_DATA/FREE_VOLUME/<PID>/)
-SMILES_CSV = Path("../../..") / "SMILES.csv"
-OUT_DIR    = Path("../../RESULTS")
+SMILES_CSV = Path(os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)"))  # set in submit.sh
+OUT_DIR    = Path("../../RESULTS") # relative to POLYMER_DATA/FREE_VOLUME/<PID>/
 
 # Source → target mapping
 JOBS = [

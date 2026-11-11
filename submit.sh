@@ -24,8 +24,11 @@ export OMP_NUM_THREADS=1
 export NSLOTS="$NSLOTS"
 initial_dir=$(pwd)
 
-# SMILES CSV (for array jobs)
-SMILES_FILE="SMILES.csv"  
+# SMILES CSV: the ONLY place the input CSV is set. Every script (APG,
+# electronic properties, predict_tg, update_*) reads it from SMILES_FILE.
+# Relative paths are taken from the project root.
+SMILES_FILE="SMILES.csv"
+[[ "$SMILES_FILE" = /* ]] || SMILES_FILE="$initial_dir/$SMILES_FILE"
 
 #==============================================================
 # --- USER CONFIG  ---
@@ -33,7 +36,7 @@ SMILES_FILE="SMILES.csv"
 #
 # === USAGE EXAMPLE ===
 #
-# Run from SMILES.csv (array jobs), e.g. first 10 rows (after header):
+# Run from SMILES_FILE (array jobs), e.g. first 10 rows (after header):
 #    qsub -t 1-10 submit.sh
 #
 #===============================
