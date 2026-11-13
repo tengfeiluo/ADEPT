@@ -7,7 +7,13 @@
 # Use initial_dir from environment (set in submit.sh), or fall back to current dir
 initial_dir="${initial_dir:-$PWD}"
 
-# SMILES_FILE is set (as an absolute path) and exported by submit.sh
+# SMILES_FILE is set and exported by submit.sh (or any submit*.sh copy).
+# Resolve it to an absolute path here so Python scripts that cd into
+# subdirectories (APG, update_*, ...) can still find it.
+if [[ -n "${SMILES_FILE:-}" && "$SMILES_FILE" != /* ]]; then
+  SMILES_FILE="$initial_dir/$SMILES_FILE"
+fi
+export SMILES_FILE
 if [[ -z "${SMILES_FILE:-}" || ! -f "$SMILES_FILE" ]]; then
   echo "[ERROR] SMILES file not found: '${SMILES_FILE:-}' (set SMILES_FILE in submit.sh)"
   exit 1

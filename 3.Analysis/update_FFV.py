@@ -18,6 +18,7 @@
 # A legacy FFV_MD.csv with a single FFV column is migrated to FFV_BONDI.
 
 import sys, csv, re
+import os
 from pathlib import Path
 
 PID_COL, SMILES_COL = "PID", "SMILES"
