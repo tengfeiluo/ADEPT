@@ -563,6 +563,7 @@ def assign_resp_charges(
             'RESP_B': 0.1,
             'VDW_SCALE_FACTORS': [1.4, 1.6, 1.8, 2.0],
             'VDW_POINT_DENSITY': 1.0,
+            'VDW_RADII': {'BR': 1.85},  # Bondi Br; not in resp default
             'RESTRAINT': SCHEME_QM['restraint'],
             'METHOD_ESP': SCHEME_QM['charge_method'],
             'BASIS_ESP': SCHEME_QM['charge_basis'],

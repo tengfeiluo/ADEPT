@@ -187,7 +187,7 @@ For each polymer (PID), `Files/files.sh` runs the enabled steps in order:
 6. **Glass Transition Temperature** — MD Tg, seeded with an ML-predicted Tg.
 7. **Viscosity** — viscosity and diffusion (prefers MD Tg, falls back to ML-predicted Tg).
 8. **EMD** — specific heat, expansion coefficients, and mechanical moduli.
-9. **Free Volume** — grid-based Bondi FFV, gas-accessible volume, and cavity size distribution.
+9. **Free Volume** — Bondi FFV (group-additivity van der Waals volume and box volume, no grid), geometric FFV (grid count outside all vdW spheres) as an independent check, gas-accessible volume, and cavity size distribution.
 
 ## Output Files
 
