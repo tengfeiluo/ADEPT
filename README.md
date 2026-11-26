@@ -10,7 +10,7 @@
 
 ADEPT turns polymer **SMILES** into tabulated physical/chemical properties: amorphous structure generation → LAMMPS MD → Psi4 monomer DFT → analysis CSVs. It is built for **high-throughput array jobs** on OSPool (HTCondor container universe), with step-level and TC mid-run checkpointing so long simulations survive the ~40 h wall-time limit.
 
-> Fork / extension of the original [sobinalosious/ADEPT](https://github.com/sobinalosious/ADEPT) workflow, with OSPool packaging, exit-85 checkpointing, and resumable NEMD thermal conductivity.
+> Working repository for the Luo group's ADEPT development: OSPool packaging, exit-85 checkpointing, resumable equilibration and NEMD thermal conductivity, RESP/ESP charges and the LJ tail correction. The original workflow is [sobinalosious/ADEPT](https://github.com/sobinalosious/ADEPT); changes made here are sent there periodically as pull requests.
 
 ---
 
@@ -106,7 +106,7 @@ Optional for **building** the image yourself: conda/mamba, `conda-pack`, Apptain
 1. **Clone**
 
    ```bash
-   git clone https://github.com/RENZHENGZHANG01/ADEPT.git
+   git clone https://github.com/tengfeiluo/ADEPT.git
    cd ADEPT
    mkdir -p Log_Files POLYMER_DATA_full
    ```
@@ -163,7 +163,7 @@ Environment variables (set in the submit `environment = "..."` string):
 
 | Variable | Role |
 | --- | --- |
-| `CHARGE_METHOD` | `GASTEIGER` or `RESP` |
+| `CHARGE_METHOD` | `GASTEIGER`, `RESP` or `ESP`. RESP (HF/6-31G*, restrained) and ESP (ωB97X-D/def2-TZVP, unrestrained) are fit with Psi4 on the H-capped monomer; each removed cap-H charge is folded onto its head/tail atom so the repeat unit stays neutral. |
 | `DO_APG` / `DO_OPT` / `DO_MONO_ELECTRONIC` / `DO_DC` / `DO_TC` / `DO_TG` / `DO_VISC` / `DO_EMD` | Stage toggles (`0`/`1`) |
 | `ADEPT_CHECKPOINT_MODE` | `exit85` enables self-checkpoint barriers |
 | `ADEPT_CKPT_BUDGET_SEC` | `0` = checkpoint after every completed step |
@@ -189,6 +189,60 @@ Per task, under `POLYMER_DATA_full/<task>/POLYMER_DATA/`:
 - `RESULTS/*.csv` — tabulated properties keyed by PID
 
 Logs: `Log_Files/full.<task>.{out,err}`, `Log_Files/tc.<task>.{out,err}`.
+
+### Result files and units
+
+Each property step writes per-polymer working files under a dedicated subfolder in `POLYMER_DATA/` (e.g. `POLYMER_DATA/OPTIMIZATION/<PID>/`) and appends a summary row to a CSV in `POLYMER_DATA/RESULTS/`:
+
+```text
+POLYMER_DATA/
+├── OPTIMIZATION/<PID>/
+├── MONOMER_ELECTRONIC/<PID>/
+├── DIELECTRIC_CONSTANT/<PID>/
+├── THERMAL_CONDUCTIVITY/<PID>/
+├── GLASS_TRANSITION/<PID>/
+├── VISCOSITY/<PID>/
+├── EMD/<PID>/
+└── RESULTS/
+    ├── RHO_MD.csv        # Density [g/cm^3]
+    ├── RG_MD.csv         # Radius of gyration [Å]
+    ├── HOMO_DFT.csv      # HOMO (monomer DFT) [eV]
+    ├── LUMO_DFT.csv      # LUMO (monomer DFT) [eV]
+    ├── BANDGAP_DFT.csv   # HOMO-LUMO gap, LUMO - HOMO (monomer DFT) [eV]
+    ├── MU_DFT.csv        # Dipole moment (monomer DFT) [Debye]
+    ├── ALPHA_DFT.csv     # Isotropic dipole polarizability (monomer DFT) [Å^3]
+    ├── ETOTAL_DFT.csv    # Total energy (monomer DFT) [kcal/mol]
+    ├── EDCMONO_DFT.csv   # Dielectric constant, electronic component (monomer estimate) [-]
+    ├── ERIMONO_DFT.csv   # Refractive index (monomer estimate) [-]
+    ├── EPERMONO_DFT.csv  # Absolute permittivity, electronic (monomer estimate) [F/m]
+    ├── DCD_MD.csv        # Dielectric constant, dipole component (polymer) [-]
+    ├── DCE_MD.csv        # Dielectric constant, electronic component (polymer) [-]
+    ├── DC_MD.csv         # Relative dielectric constant, total (polymer) [-]
+    ├── RI_MD.csv         # Refractive index (polymer) [-]
+    ├── PE_MD.csv         # Absolute permittivity, total, ε = DC × ε0 (polymer) [pF/m]
+    ├── TC_MD.csv         # Thermal conductivity, NEMD, 320/280 K reservoirs (mean 300 K) [W/(m·K)]
+    ├── TG_MD.csv         # Glass transition temperature [K]
+    ├── VISC_MD.csv       # Viscosity, Green-Kubo at T = Tg + 50 K (TEMP column) [Pa·s]
+    ├── D_MD.csv          # Self-diffusion coefficient at T = Tg + 50 K (TEMP column) [cm^2/s]
+    ├── CP_MD.csv         # Specific heat capacity Cp [J/(kg·K)]
+    ├── ALPHAT_MD.csv     # Thermal diffusivity, κ/(ρ·Cp) [m^2/s]
+    ├── ALPHAP_MD.csv     # Volumetric thermal expansion coefficient [1/K]
+    ├── ALPHAL_MD.csv     # Linear thermal expansion coefficient, ALPHAP/3 [1/K]
+    ├── K_MD.csv          # Bulk modulus [GPa]
+    ├── G_MD.csv          # Shear modulus [GPa]
+    ├── E_MD.csv          # Young's modulus [GPa]
+    └── NU_MD.csv         # Poisson's ratio [-]
+```
+
+The `RESULTS/` CSVs are keyed by `PID`, so results from many array tasks collect into a single table per property.
+
+### Notes on property definitions
+
+- **Units.** Values are written in the units shown in brackets above, with no scaling. Derived datasets may rescale or rename columns. For example, the ADEPT-PolyGraphMT training data store thermal diffusivity as `TD_MD.csv` in units of 10⁻⁷ m²/s (this is the same quantity as `ALPHAT_MD.csv`). Check the units of any derived file before use.
+- **`BANDGAP_DFT`** is the HOMO-LUMO gap of the isolated monomer (repeat unit) from Psi4 DFT, not the band gap of a polymer chain or solid. It is typically larger than measured optical band gaps.
+- **`DC_MD` vs `PE_MD`.** `DC_MD` is the relative (dimensionless) static dielectric constant, ε = ε_el + ε_dip − 1, where ε_el = n² comes from the DFT polarizability via Lorentz-Lorenz and ε_dip comes from MD dipole fluctuations. `PE_MD` is the absolute permittivity, DC × ε0, in pF/m; it is not a relative permittivity.
+- **Glass transition temperature.** `TG_MD` comes from stepwise NPT cooling over Tg_ML ± 150 K (lower bound 50 K) in 10 K steps of 0.5 ns equilibration + 0.5 ns production (about 10 K/ns), followed by a bilinear fit of density vs temperature. The 1000 → 300 K cool-down in the equilibration step (about 140 K/ns) is part of structure preparation and is not the Tg protocol.
+- **Viscosity and diffusion** are computed at T = Tg + 50 K, using MD Tg when available and the ML-predicted Tg otherwise; the temperature is recorded in the `TEMP` column.
 
 ## Legacy / local HPC
 
