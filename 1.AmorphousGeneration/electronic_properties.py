@@ -473,7 +473,7 @@ if __name__ == "__main__":
 
     pid = sys.argv[1]
     nproc = int(sys.argv[2])
-    smiles_csv = "../../../SMILES.csv"
+    smiles_csv = os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)")
 
     output_dir = os.getcwd() 
     #os.makedirs(output_dir, exist_ok=True)

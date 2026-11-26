@@ -11,11 +11,12 @@
 #   <PID>_alphaP_EMD_result.dat
 
 import sys, csv, re
+import os
 from pathlib import Path
 
 # --- Config ---
-SMILES_CSV = Path("../../..") / "SMILES.csv"
-OUT_DIR    = Path("../../RESULTS")
+SMILES_CSV = Path(os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)"))  # set in submit.sh
+OUT_DIR    = Path("../../RESULTS") # relative to POLYMER_DATA/EMD/<PID>/
 CP_CSV     = OUT_DIR / "CP_MD.csv"
 ALPHAP_CSV = OUT_DIR / "ALPHAP_MD.csv"
 ALPHAL_CSV = OUT_DIR / "ALPHAL_MD.csv"

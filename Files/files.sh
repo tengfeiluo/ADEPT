@@ -7,6 +7,19 @@
 # Use initial_dir from environment (set in submit.sh), or fall back to current dir
 initial_dir="${initial_dir:-$PWD}"
 
+# SMILES_FILE is set and exported by submit.sh (or any submit*.sh copy).
+# Resolve it to an absolute path here so Python scripts that cd into
+# subdirectories (APG, update_*, ...) can still find it.
+if [[ -n "${SMILES_FILE:-}" && "$SMILES_FILE" != /* ]]; then
+  SMILES_FILE="$initial_dir/$SMILES_FILE"
+fi
+export SMILES_FILE
+if [[ -z "${SMILES_FILE:-}" || ! -f "$SMILES_FILE" ]]; then
+  echo "[ERROR] SMILES file not found: '${SMILES_FILE:-}' (set SMILES_FILE in submit.sh)"
+  exit 1
+fi
+echo "[INFO] Using SMILES file: $SMILES_FILE"
+
 # ---------------- Helpers ----------------
 is_true() {
   case "$(echo "${1:-0}" | tr '[:upper:]' '[:lower:]')" in
@@ -97,7 +110,7 @@ get_tg_md_for_pid() {
 if [[ -n "${PID:-}" ]]; then
   echo "[INFO] PID already set (${PID}); running workflow."
 else
-  # CSV mode: require SGE_TASK_ID and map it to SMILES.csv
+  # CSV mode: require SGE_TASK_ID and map it to a row of $SMILES_FILE
   if [[ -z "${SGE_TASK_ID:-}" ]]; then
     echo "[ERROR] No PID and no SGE_TASK_ID found."
     echo "       Submit as an array job, e.g.: qsub -t 1-N submit.sh"
@@ -123,10 +136,11 @@ fi
 if is_true "$DO_APG"; then
   method_norm="$(echo "$CHARGE_METHOD" | tr '[:lower:]' '[:upper:]')"
   case "$method_norm" in
-    RESP)      apg_script="APG_resp.py" ;;
+    RESP)      apg_script="APG_qm.py"; export ADEPT_CHARGE_SCHEME=RESP ;;
+    ESP)       apg_script="APG_qm.py"; export ADEPT_CHARGE_SCHEME=ESP ;;
     GASTEIGER) apg_script="APG_gas.py"  ;;
     *)
-      echo "[ERROR] CHARGE_METHOD must be RESP or GASTEIGER (got: '$CHARGE_METHOD')"
+      echo "[ERROR] CHARGE_METHOD must be RESP, ESP or GASTEIGER (got: '$CHARGE_METHOD')"
       exit 1
       ;;
   esac
@@ -261,6 +275,19 @@ if is_true "$DO_EMD"; then
   cd "$initial_dir"
 else
   echo "[SKIP] EMD disabled (DO_EMD=$DO_EMD)"
+fi
+
+# Step 9: Free Volume (Bondi FFV, gas-accessible volume, cavity size)
+if is_true "$DO_FFV"; then
+  echo "[RUN ] Free volume for $PID"
+  mkdir -p "POLYMER_DATA/FREE_VOLUME/$PID"
+  cd "POLYMER_DATA/FREE_VOLUME/$PID"
+  mpirun -n "$NSLOTS" lmp -in "../../../2.Simulations/lammps_ffv.in" -var name "$PID"
+  python "../../../3.Analysis/calc_FFV.py" "$PID"
+  python "../../../3.Analysis/update_FFV.py" "$PID"
+  cd "$initial_dir"
+else
+  echo "[SKIP] Free volume disabled (DO_FFV=$DO_FFV)"
 fi
 
 echo "Workflow complete for PID=$PID"

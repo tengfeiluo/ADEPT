@@ -10,14 +10,15 @@
 #   K_MD.csv, G1_MD.csv, G2_MD.csv, G_MD.csv, NU_MD.csv, E_MD.csv
 #
 # Each CSV has columns: PID, SMILES, <property>
-# SMILES is looked up from ../../../SMILES.csv (expects headers: PID,SMILES)
+# SMILES is looked up from $SMILES_FILE, set in submit.sh (expects headers: PID,SMILES)
 
 import sys, csv, re
+import os
 from pathlib import Path
 
 # --- Config ---
-OUT_DIR        = Path("../../RESULTS")
-SMILES_CSV     = Path("../../..") / "SMILES.csv"  # run from POLYMER_DATA/MODULUS/<PID>/
+OUT_DIR        = Path("../../RESULTS") # relative to POLYMER_DATA/EMD/<PID>/
+SMILES_CSV     = Path(os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)"))  # set in submit.sh
 PID_COL        = "PID"
 SMILES_COL     = "SMILES"
 

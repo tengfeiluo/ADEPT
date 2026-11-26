@@ -4,7 +4,7 @@ Predict Tg using a pre-trained MLP + MACCS model for a given PID.
 
 Requirements:
     - Trained model : model_mlp_tg.pkl
-    - SMILES.csv file with columns: PID, SMILES
+    - SMILES CSV ($SMILES_FILE, set in submit.sh) with columns: PID, SMILES
 
 Usage:
     python predict_tg.py P000001
@@ -21,7 +21,7 @@ import joblib
 # ----------------- Config -----------------
 # Path to the MLP model you trained in train_tg_mlp_maccs.py
 MODEL_PATH = "Files/model_mlp_tg.pkl"
-SMILES_CSV_PATH = "SMILES.csv"
+SMILES_CSV_PATH = os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)")
 # ------------------------------------------
 
 
@@ -40,7 +40,7 @@ def load_smiles_for_pid(pid: str, smiles_csv_path: str) -> str:
     df = pd.read_csv(smiles_csv_path)
 
     if "PID" not in df.columns or "SMILES" not in df.columns:
-        raise ValueError("SMILES.csv must contain 'PID' and 'SMILES' columns.")
+        raise ValueError(f"{smiles_csv_path} must contain 'PID' and 'SMILES' columns.")
 
     # Compare as strings to be robust
     df["PID"] = df["PID"].astype(str)

@@ -5,14 +5,15 @@
 # Reads thermal conductivity result in the *current directory*:
 #   {PID}_TC_result.dat  -> ../../RESULTS/TC_MD.csv  (columns: PID,SMILES,TC)
 #
-# Looks up SMILES for PID from ../../../SMILES.csv (expects headers: PID,SMILES)
+# Looks up SMILES for PID from $SMILES_FILE, set in submit.sh (expects headers: PID,SMILES)
 
 import sys, csv, re
+import os
 from pathlib import Path
 
 PID_COL, SMILES_COL, VALUE_COL = "PID", "SMILES", "TC"
-SMILES_CSV = Path("../../..") / "SMILES.csv"  # from POLYMER_DATA/THERMAL_CONDUCTIVITY/<PID>/
-OUT_DIR    = Path("../../RESULTS")
+SMILES_CSV = Path(os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)"))  # set in submit.sh
+OUT_DIR    = Path("../../RESULTS") # relative to POLYMER_DATA/THERMAL_CONDUCTIVITY/<PID>/
 OUT_CSV    = OUT_DIR / "TC_MD.csv"
 FLOAT_RE   = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
 

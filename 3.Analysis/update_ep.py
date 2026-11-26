@@ -4,7 +4,7 @@
 #
 # Reads electronic property files in the *current directory* named like:
 #   {PID}_{key}.dat  (or fallback: {key}.dat)
-# Looks up SMILES for PID from ../../../SMILES.csv (expects headers: PID,SMILES)
+# Looks up SMILES for PID from $SMILES_FILE, set in submit.sh (expects headers: PID,SMILES)
 # Appends/updates one CSV per property under ../../RESULTS/
 # Schema for each CSV: PID,SMILES,<METRIC>  where <METRIC> = CSV name without _DFT
 #
@@ -21,6 +21,7 @@
 #   bandgap (Eg = LUMO - HOMO)                   -> BANDGAP_DFT.csv  (column: BANDGAP)
 
 import sys, csv, re
+import os
 from pathlib import Path
 
 # ---------- config ----------
@@ -40,8 +41,8 @@ CSV_BANDGAP      = "BANDGAP_DFT.csv"    # Eg = LUMO - HOMO
 
 EPS0 = 8.854187817e-12  # F/m
 
-SMILES_CSV = Path("../../..") / "SMILES.csv"   # from POLYMER_DATA/MONOMER_ELECTRONIC/<PID>/
-OUT_DIR    = Path("../../RESULTS")             # write aggregate CSVs here
+SMILES_CSV = Path(os.environ.get("SMILES_FILE") or sys.exit("[ERROR] SMILES_FILE not set (set it in submit.sh)"))  # set in submit.sh
+OUT_DIR    = Path("../../RESULTS")  # relative to POLYMER_DATA/MONOMER_ELECTRONIC/<PID>/           # write aggregate CSVs here
 
 PID_COL, SMILES_COL = "PID", "SMILES"
 FLOAT_RE = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")

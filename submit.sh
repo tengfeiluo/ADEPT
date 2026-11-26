@@ -24,8 +24,11 @@ export OMP_NUM_THREADS=1
 export NSLOTS="$NSLOTS"
 initial_dir=$(pwd)
 
-# SMILES CSV (for array jobs)
-SMILES_FILE="SMILES.csv"  
+# SMILES CSV: the ONLY place the input CSV is set. Every script (APG,
+# electronic properties, predict_tg, update_*) reads it from SMILES_FILE.
+# Relative paths are taken from the project root.
+SMILES_FILE="SMILES.csv"
+[[ "$SMILES_FILE" = /* ]] || SMILES_FILE="$initial_dir/$SMILES_FILE"
 
 #==============================================================
 # --- USER CONFIG  ---
@@ -33,7 +36,7 @@ SMILES_FILE="SMILES.csv"
 #
 # === USAGE EXAMPLE ===
 #
-# Run from SMILES.csv (array jobs), e.g. first 10 rows (after header):
+# Run from SMILES_FILE (array jobs), e.g. first 10 rows (after header):
 #    qsub -t 1-10 submit.sh
 #
 #===============================
@@ -46,9 +49,10 @@ SMILES_FILE="SMILES.csv"
 DO_APG=1    # Amorphous generation:
 #   ✅ Build amorphous polymer structure (.lmps)
 	# --- Charge method for APG (choose one) ---
-	CHARGE_METHOD="RESP"     # Options: "RESP" or "GASTEIGER" 
+	CHARGE_METHOD="RESP"     # Options: "RESP" or "GASTEIGER" or "ESP"
 								  #(Use RESP if Dielectric Constant is calculating)
 								  # Note: RESP is time consuming compared to GASTEIGER
+								  # ESP for comparison
 
 DO_OPT=1    # Optimization / Equilibration:					(Output Files: POLYMER_DATA/RESULTS)
 #   ✅ Equilibration runs 									(POLYMER_DATA/OPTIMIZATION/PID/PID_eq1.data, PID_eq2.data)
@@ -92,12 +96,17 @@ DO_EMD=1
 #   ✅ Shear Modulus 										(G_MD.csv)
 #   ✅ Youngs Modulus										(E_MD.csv)
 #   ✅ Poisson ratio										(NU_MD.csv)
+
+DO_FFV=1    # Free volume (2 ns NPT at 300 K from PID_eq2.data):
+#   ✅ Fractional free volume (Bondi + geometric)					(FFV_MD.csv)
+#   ✅ Accessible volume fraction: He, CO2, O2, N2, CH4		(FAV_HE_MD.csv, FAV_CO2_MD.csv, ...)
+#   ✅ Mean cavity radius (He probe)						(CAVR_MD.csv)
 #==============================================================
 
 CSV_START_LINE=2   # 2 = skip header; set to 1 if no header
 # Export config so child jobs (manual list mode) inherit these values
 export SMILES_FILE CSV_START_LINE
-export DO_APG DO_MONO_ELECTRONIC DO_OPT DO_TC DO_TG DO_VISC DO_DC DO_EMD
+export DO_APG DO_MONO_ELECTRONIC DO_OPT DO_TC DO_TG DO_VISC DO_DC DO_EMD DO_FFV
 export CHARGE_METHOD
 export initial_dir
 
