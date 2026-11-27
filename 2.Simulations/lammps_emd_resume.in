@@ -1,0 +1,19 @@
+# ADEPT EMD stage, part 1 (8 ns NPT at 300 K), resumable. Same physics as the first block of lammps_emd.in.
+# Snapshots eq2_<step>.data are written every 80000 steps as before; chunk lengths must be multiples of 80000.
+# Vars (set by run_emd_resumable): name resume(0/1) rstfile run_upto step0 incdir rstprefix
+log             log.emd_npt append
+if "${resume} == 0" then "include ${incdir}/emd_fresh_read.inc" else "read_restart ${rstfile}"
+neighbor        3.0 bin
+neigh_modify    delay 0 every 1
+kspace_style    pppm 1e-6
+fix             SHAKE3 all shake 1e-4 1000 0 m 1.0
+fix             NPT all npt temp 300 300 100 iso 1.0 1.0 1000
+variable        volume equal vol
+variable        temperature equal temp
+variable        energy equal etotal
+variable        pressure equal press
+variable        dens equal density
+variable        st equal step
+fix             propertiesPrint all print 100 "${st} ${temperature} ${energy} ${pressure} ${volume} ${dens}" file ${name}_npt_properties.dat.part_${step0} screen no
+run             ${run_upto} upto every 80000 "write_data eq2_*.data"
+include         ${incdir}/stage_write_rst.inc

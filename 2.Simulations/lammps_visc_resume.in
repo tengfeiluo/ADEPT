@@ -1,0 +1,12 @@
+# ADEPT viscosity / diffusion, resumable. Same physics as lammps_visc.in, run in checkpointable chunks.
+#   phase 1: NPT at Tfinal = Tg + 50 K for 1 ns (restarts <name>_viscnpt_<step>.rst)
+#   phase 2: NVT production (step counter restarts at 0; restarts <name>_visc_<step>.rst)
+# Vars (set by run_visc_resumable): name Tg phase resume rstfile prodstart run_upto step0 incdir rstprefix
+log             ${name}_visc.log append
+variable        Tfinal equal v_Tg+50.0
+if "${resume} == 0" then "include ${incdir}/visc_fresh_read.inc" else "read_restart ${rstfile}"
+kspace_style    pppm 1e-6
+timestep        1.0
+if "${phase} == 1" then "fix NPTf all npt temp ${Tfinal} ${Tfinal} 100 iso 1.0 1.0 1000" "thermo 20000" "thermo_style custom step temp press vol density" else "include ${incdir}/visc_prod_setup.inc"
+run             ${run_upto} upto
+include         ${incdir}/stage_write_rst.inc

@@ -76,6 +76,11 @@ step_is_done() {
         tg_chunk)        tg_has_resume_artifacts "$pid" ;;
         # Mid-eq2 chunk checkpoint (resumable cooling ramp / hold).
         eq2_chunk)       eq2_has_resume_artifacts "$pid" ;;
+        # Mid-stage chunks of eq1, dielectric constant, viscosity and EMD (Files/stage_resume.sh).
+        eq1_chunk)       eq1_has_resume_artifacts "$pid" ;;
+        dc_chunk)        dc_has_resume_artifacts "$pid" ;;
+        visc_chunk)      visc_has_resume_artifacts "$pid" ;;
+        emd_chunk)       emd_has_resume_artifacts "$pid" ;;
         visc)            step_done_visc "$pid" ;;
         emd)             step_done_emd "$pid" ;;
         *)               return 0 ;;
@@ -424,12 +429,17 @@ run_lammps_opt_for_pid() {
         if [[ -f "${pid}_eq1.data" ]]; then
             echo "[SKIP] eq1 already complete (${pid}_eq1.data)"
         else
-            echo "[RUN ] eq1 for ${pid}"
-            run_lmp_mpi lmp -in "$eq1_in" -var name "$pid"
+            if stage_resumable; then
+                echo "[RUN ] eq1 (resumable chunks) for ${pid}"
+                run_eq1_resumable "$pid"
+            else
+                echo "[RUN ] eq1 for ${pid}"
+                run_lmp_mpi lmp -in "$eq1_in" -var name "$pid"
+            fi
         fi
 
         if [[ -f "${pid}_eq1.data" ]]; then
-            if is_true "${ADEPT_EQ2_RESUMABLE:-0}"; then
+            if is_true "${ADEPT_EQ2_RESUMABLE:-${ADEPT_STAGE_RESUMABLE:-1}}"; then
                 echo "[RUN ] eq2 (resumable chunks) for ${pid}"
                 run_eq2_resumable "$pid"
             else

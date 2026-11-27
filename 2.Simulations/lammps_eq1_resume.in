@@ -1,0 +1,21 @@
+# ADEPT eq1, resumable. Same physics as lammps_eq1.in, split at its stages and into checkpointable chunks.
+# Timeline (timestep counter after the minimization):
+#   phase 0: 0 .. 20000            minimize + NVT 100 K, 0.1 fs         (always one chunk)
+#   phase 2: 20000 .. 1020000      NVT 100 -> 1000 K, 1 fs, SHAKE
+#   phase 3: 1020000 .. 1070000    NPT 1000 K, 0.1 atm
+#   phase 4: 1070000 .. 2070000    NPT 1000 K, 0.1 -> 500 atm
+# Vars (set by run_eq1_resumable): name phase rstfile run_upto incdir rstprefix
+log             ${name}_eq1.log append
+if "${phase} == 0" then "include ${incdir}/eq1_fresh.inc" else "read_restart ${rstfile}"
+neighbor        3.0 bin
+neigh_modify    delay 0
+thermo          1000
+thermo_style    custom step temp press etotal ke pe ebond eangle edihed eimp evdwl ecoul elong vol density lx ly lz
+thermo_modify   flush yes
+timestep        1.0
+if "${phase} > 0" then "fix SHAKE1 all shake 1e-4 1000 0 m 1.0"
+if "${phase} == 2" then "fix NVT2 all nvt temp 100 1000 100.0" "run ${run_upto} upto start 20000 stop 1020000"
+if "${phase} == 3" then "fix NPT1 all npt temp 1000 1000 100.0 iso 0.1 0.1 1000.0" "run ${run_upto} upto"
+if "${phase} == 4" then "fix NPT2 all npt temp 1000 1000 100.0 iso 0.1 500.0 1000.0" "run ${run_upto} upto start 1070000 stop 2070000"
+include         ${incdir}/stage_write_rst.inc
+if "$(step) >= 2070000" then "write_data ${name}_eq1.data"

@@ -1,0 +1,11 @@
+# ADEPT EMD stage, part 2 (strain-step moduli), in batches. Runs modulus_files/in_<i>.elastic for
+# i = first .. last, each into its own log (log.elastic_<i>); the wrapper joins them into log.elastic_T.
+# Vars (set by run_emd_resumable): first last moddir
+variable        i loop ${first} ${last}
+label           snap
+log             log.elastic_${i}
+include         ${moddir}/in_${i}.elastic
+log             log.emd_modulus append
+print           "modulus snapshot ${i} finished"
+next            i
+jump            SELF snap

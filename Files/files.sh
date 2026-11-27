@@ -10,6 +10,9 @@ initial_dir="${initial_dir:-$PWD}"
 # Checkpoint / resume helpers (OSPool eviction-safe)
 # shellcheck source=Files/checkpoint.sh
 source "${initial_dir}/Files/checkpoint.sh"
+# Mid-stage checkpoints for eq1, dielectric constant, viscosity and EMD
+# shellcheck source=Files/stage_resume.sh
+source "${initial_dir}/Files/stage_resume.sh"
 
 # ---------------- Helpers ----------------
 is_true() {
@@ -220,14 +223,18 @@ fi
 
 # Step 4: Dielectric Constant
 if is_true "$DO_DC"; then
-  if step_done_dc "$PID"; then
+  if step_done_dc "$PID" && ! dc_incomplete "$PID"; then
     echo "[SKIP] Dielectric constant already complete for $PID"
     agent_checkpoint_log "H2" "files.sh:dc" "skipped completed step" "{\"pid\":\"${PID}\"}"
   else
   echo "[RUN ] Dielectric constant for $PID"
   mkdir -p "POLYMER_DATA/DIELECTRIC_CONSTANT/$PID"
   cd "POLYMER_DATA/DIELECTRIC_CONSTANT/$PID"
-  run_lmp_mpi lmp -in "../../../2.Simulations/lammps_dc.in" -var name "$PID"
+  if stage_resumable; then
+    run_dc_resumable "$PID"
+  else
+    run_lmp_mpi lmp -in "../../../2.Simulations/lammps_dc.in" -var name "$PID"
+  fi
   python "../../../3.Analysis/calc_DC.py" "$PID"
   python "../../../3.Analysis/update_DC.py" "$PID"
   cd "$initial_dir"
@@ -279,7 +286,7 @@ fi
 
 # Step 7: Viscosity (prefers MD Tg, falls back to ML-predicted Tg)
 if is_true "$DO_VISC"; then
-  if step_done_visc "$PID"; then
+  if step_done_visc "$PID" && ! visc_incomplete "$PID"; then
     echo "[SKIP] Viscosity already complete for $PID"
     agent_checkpoint_log "H2" "files.sh:visc" "skipped completed step" "{\"pid\":\"${PID}\"}"
   else
@@ -304,8 +311,12 @@ if is_true "$DO_VISC"; then
     echo "[RUN ] Viscosity for $PID using Tg=${TG_VAL} K"
     mkdir -p "POLYMER_DATA/VISCOSITY/$PID"
     cd "POLYMER_DATA/VISCOSITY/$PID"
-    run_lmp_mpi lmp -in "../../../2.Simulations/lammps_visc.in" \
-          -var name "$PID" -var Tg "$TG_VAL"
+    if stage_resumable; then
+      run_visc_resumable "$PID" "$TG_VAL"
+    else
+      run_lmp_mpi lmp -in "../../../2.Simulations/lammps_visc.in" \
+            -var name "$PID" -var Tg "$TG_VAL"
+    fi
     python "../../../3.Analysis/update_visc.py" "$PID"
     cd "$initial_dir"
     checkpoint_barrier "visc"
@@ -324,7 +335,11 @@ if is_true "$DO_EMD"; then
   echo "[RUN ] EMD for $PID"
   mkdir -p "POLYMER_DATA/EMD/$PID"
   cd "POLYMER_DATA/EMD/$PID"
-  run_lmp_mpi lmp -in "../../../2.Simulations/lammps_emd.in" -var name "$PID"
+  if stage_resumable; then
+    run_emd_resumable "$PID"
+  else
+    run_lmp_mpi lmp -in "../../../2.Simulations/lammps_emd.in" -var name "$PID"
+  fi
 
   # Post-process: modulus, Cp, alpha from EMD trajectory
   python "../../../3.Analysis/calc_modulus.py" "$PID"
