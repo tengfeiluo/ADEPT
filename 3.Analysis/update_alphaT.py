@@ -38,10 +38,8 @@ def usage():
     sys.exit(1)
 
 def _open_csv(path: Path):
-    try:
-        return path.open(newline="", encoding="utf-8")
-    except UnicodeError:
-        return path.open(newline="", encoding="utf-8-sig")
+    # utf-8-sig strips the BOM Excel adds and reads BOM-less files the same as utf-8
+    return path.open(newline="", encoding="utf-8-sig")
 
 def _lower_map(fields):
     return {f.lower(): f for f in (fields or [])}

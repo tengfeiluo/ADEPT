@@ -105,7 +105,7 @@ def smiles_for_pid(pid):
     path = os.environ.get("SMILES_FILE")
     if not path or not os.path.exists(path):
         return None
-    with open(path, newline="", encoding="utf-8", errors="ignore") as fh:
+    with open(path, newline="", encoding="utf-8-sig", errors="ignore") as fh:
         rdr = csv.DictReader(fh)
         low = {k.lower(): k for k in (rdr.fieldnames or [])}
         if "pid" not in low or "smiles" not in low:

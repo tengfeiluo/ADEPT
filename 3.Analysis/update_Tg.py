@@ -19,7 +19,7 @@ def first_number(text):
 
 def load_smiles(pid: str) -> str:
     if not SMILES_CSV.exists(): return ""
-    with SMILES_CSV.open(newline="", encoding="utf-8") as fh:
+    with SMILES_CSV.open(newline="", encoding="utf-8-sig") as fh:
         rdr = csv.DictReader(fh)
         if not rdr.fieldnames: return ""
         lower = {k.lower(): k for k in rdr.fieldnames}
