@@ -3,6 +3,10 @@
 # The dipole record of each chunk goes to its own part file (first column = step); the wrapper merges them.
 log             ${name}_dc.log append
 if "${resume} == 0" then "include ${incdir}/dc_fresh_read.inc" else "read_restart ${rstfile}"
+# Remove center-of-mass drift: nothing else in this run conserves or resets linear momentum,
+# and the drift builds up to tens of m/s over nanoseconds (it also biases the temperature).
+velocity        all zero linear
+fix             MOMZERO all momentum 1000 linear 1 1 1
 kspace_style    pppm 1e-6
 timestep        1.0
 neighbor        2.5 bin

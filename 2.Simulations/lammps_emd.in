@@ -20,6 +20,10 @@ kspace_style	pppm 1e-6
 
 
 read_data       ../../OPTIMIZATION/${name}/${name}_eq2.data
+# Remove center-of-mass drift: nothing else in this run conserves or resets linear momentum,
+# and the drift builds up to tens of m/s over nanoseconds (it also biases the temperature).
+velocity        all zero linear
+fix             MOMZERO all momentum 1000 linear 1 1 1
 
 fix				SHAKE3 all shake 1e-4 1000 0 m 1.0
 

@@ -21,6 +21,10 @@ neigh_modify	delay 0 every 1 check yes
 kspace_style	pppm 1e-4
 
 read_data       ${name}_eq1.data
+# Remove center-of-mass drift: nothing else in this run conserves or resets linear momentum,
+# and the drift builds up to tens of m/s over nanoseconds (it also biases the temperature).
+velocity        all zero linear
+fix             MOMZERO all momentum 1000 linear 1 1 1
 
 #dump            2 all xtc 1000 ${name}_lmp_eq2_i.xtc
 #dump_modify     2 unwrap yes

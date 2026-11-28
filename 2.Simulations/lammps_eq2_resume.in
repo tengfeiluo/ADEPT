@@ -5,6 +5,10 @@
 # Vars (set by run_eq2_resumable): seg name resume(0/1) rstfile phase(1 ramp, 2 hold) run_upto ramp_steps total_steps incdir
 log             ${name}_eq2.log append
 if "${resume} == 0" then "include ${incdir}/eq2_fresh_read.inc" else "read_restart ${rstfile}"
+# Remove center-of-mass drift: nothing else in this run conserves or resets linear momentum,
+# and the drift builds up to tens of m/s over nanoseconds (it also biases the temperature).
+velocity        all zero linear
+fix             MOMZERO all momentum 1000 linear 1 1 1
 neighbor        3.0 bin
 neigh_modify    delay 0 every 1 check yes
 kspace_style    pppm 1e-4

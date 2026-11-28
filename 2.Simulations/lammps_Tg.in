@@ -82,6 +82,10 @@ if "${resume} == 0" then &
   "reset_timestep 0" &
 else &
   "read_restart ${rstfile}"
+# Remove center-of-mass drift: nothing else in this run conserves or resets linear momentum,
+# and the drift builds up to tens of m/s over nanoseconds (it also biases the temperature).
+velocity        all zero linear
+fix             MOMZERO all momentum 1000 linear 1 1 1
 
 # Integrator/timestep
 timestep        ${timestep_fs}

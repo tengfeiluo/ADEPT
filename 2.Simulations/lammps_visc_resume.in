@@ -5,6 +5,10 @@
 log             ${name}_visc.log append
 variable        Tfinal equal v_Tg+50.0
 if "${resume} == 0" then "include ${incdir}/visc_fresh_read.inc" else "read_restart ${rstfile}"
+# Remove center-of-mass drift: nothing else in this run conserves or resets linear momentum,
+# and the drift builds up to tens of m/s over nanoseconds (it also biases the temperature).
+velocity        all zero linear
+fix             MOMZERO all momentum 1000 linear 1 1 1
 kspace_style    pppm 1e-6
 timestep        1.0
 if "${phase} == 1" then "fix NPTf all npt temp ${Tfinal} ${Tfinal} 100 iso 1.0 1.0 1000" "thermo 20000" "thermo_style custom step temp press vol density" else "include ${incdir}/visc_prod_setup.inc"

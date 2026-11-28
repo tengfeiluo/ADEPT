@@ -20,6 +20,10 @@ kspace_style    pppm 1e-6
 
 # ----------------------- Data ------------------------
 read_data       ../../OPTIMIZATION/${name}/${name}_eq2.data
+# Remove center-of-mass drift: nothing else in this run conserves or resets linear momentum,
+# and the drift builds up to tens of m/s over nanoseconds (it also biases the temperature).
+velocity        all zero linear
+fix             MOMZERO all momentum 1000 linear 1 1 1
 
 # ------------------- Temperature ---------------------
 # Provide Tg at the command line:  -var Tg 250
@@ -57,7 +61,7 @@ fix             NVT all nvt temp ${Tfinal} ${Tfinal} 100.0
 ###############################################################################
 # Diffusion of polymer (MSD of all polymer atoms)
 ###############################################################################
-compute         MSD_poly all msd             # c_MSD_poly[4] = total MSD (Å^2)
+compute         MSD_poly all msd com yes             # c_MSD_poly[4] = total MSD (Å^2)
 
 # Two-point instantaneous D(t) = MSD(t)/(6t); convert to cm^2/s (0.1 factor)
 variable        D_two  equal c_MSD_poly[4]/(6.0*(step*${dt}+1.0e-6))*0.1

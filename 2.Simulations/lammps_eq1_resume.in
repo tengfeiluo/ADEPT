@@ -7,6 +7,8 @@
 # Vars (set by run_eq1_resumable): name phase rstfile run_upto incdir rstprefix
 log             ${name}_eq1.log append
 if "${phase} == 0" then "include ${incdir}/eq1_fresh.inc" else "read_restart ${rstfile}"
+# Momentum removal (set in eq1_fresh.inc on a fresh start; fixes are not stored in restart files)
+if "${phase} > 0" then "velocity all zero linear" "fix MOMZERO all momentum 1000 linear 1 1 1"
 neighbor        3.0 bin
 neigh_modify    delay 0
 thermo          1000

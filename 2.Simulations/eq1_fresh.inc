@@ -21,6 +21,10 @@ minimize        1.0e-6 1.0e-7 10000 10000
 min_style       fire
 minimize        1.0e-6 1.0e-7 10000 10000
 reset_timestep  0
+# Remove center-of-mass drift: nothing else in this run conserves or resets linear momentum,
+# and the drift builds up to tens of m/s over nanoseconds (it also biases the temperature).
+velocity        all zero linear
+fix             MOMZERO all momentum 1000 linear 1 1 1
 timestep        0.1
 fix             NVT1 all nvt temp 100 100 $(100.0*dt)
 run             20000

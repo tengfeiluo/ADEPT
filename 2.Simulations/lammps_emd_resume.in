@@ -3,6 +3,10 @@
 # Vars (set by run_emd_resumable): name resume(0/1) rstfile run_upto step0 incdir rstprefix
 log             log.emd_npt append
 if "${resume} == 0" then "include ${incdir}/emd_fresh_read.inc" else "read_restart ${rstfile}"
+# Remove center-of-mass drift: nothing else in this run conserves or resets linear momentum,
+# and the drift builds up to tens of m/s over nanoseconds (it also biases the temperature).
+velocity        all zero linear
+fix             MOMZERO all momentum 1000 linear 1 1 1
 neighbor        3.0 bin
 neigh_modify    delay 0 every 1
 kspace_style    pppm 1e-6
