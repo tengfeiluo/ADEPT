@@ -3,10 +3,12 @@
 #
 # Each stage runs as a series of chunks. After every chunk LAMMPS writes a restart file
 # <prefix>_<step>.rst; the next chunk (in the same job, after an HTCondor exit-85 checkpoint, or after the
-# job was killed and resubmitted on any scheduler) continues from the newest one. The restart of the final
-# step is kept, so a finished stage can be extended later by raising its ADEPT_<STAGE>_TOTAL_STEPS.
+# job was killed and resubmitted on any scheduler) continues from the newest one. Every chunk's restart is
+# kept by default, so a run can be restarted from any chunk boundary and a finished stage can be extended
+# later by raising its ADEPT_<STAGE>_TOTAL_STEPS.
 #
 #   ADEPT_STAGE_RESUMABLE=1 (default)  use the chunked inputs; 0 = original single-run inputs
+#   ADEPT_STAGE_KEEP_RESTARTS=1 (default)  keep every chunk's restart; 0 = keep only the newest one
 #   ADEPT_EQ1_CHUNK_STEPS   (1000000)
 #   ADEPT_DC_TOTAL_STEPS    (5000000)  ADEPT_DC_CHUNK_STEPS   (1000000)
 #   ADEPT_VISC_TOTAL_STEPS  (5000000)  ADEPT_VISC_CHUNK_STEPS (1000000)   production; the 1 ns NPT is fixed
@@ -18,6 +20,15 @@
 # All functions run under the caller's `set -euo pipefail`: tests are explicit ifs.
 
 stage_resumable() { is_true "${ADEPT_STAGE_RESUMABLE:-1}"; }
+
+# Archive copy of a stage's rolling end-of-chunk restart (eq2, TC, Tg overwrite one file): <src> -> <dst>.
+# The copies are not used to resume; they let a run be restarted by hand from an earlier chunk boundary.
+stage_rst_archive() {
+    local src="$1" dst="$2"
+    if ! is_true "${ADEPT_STAGE_KEEP_RESTARTS:-1}"; then return 0; fi
+    if [[ -s "$src" ]]; then cp -f "$src" "${dst}.tmp" && mv -f "${dst}.tmp" "$dst"; fi
+    return 0
+}
 
 # Finish a restart that LAMMPS wrote completely (<prefix>_tmp.rst + <prefix>_tmp.ok) but that was not renamed yet.
 stage_rst_commit() {
@@ -45,6 +56,7 @@ stage_rst_step() {
 # Delete every <prefix>_<step>.rst except the one at step $2.
 stage_rst_prune() {
     local prefix="$1" keep="$2" f
+    if is_true "${ADEPT_STAGE_KEEP_RESTARTS:-1}"; then return 0; fi
     for f in "${prefix}"_*.rst; do
         if [[ -f "$f" && "$f" != "${prefix}_${keep}.rst" ]]; then rm -f "$f"; fi
     done

@@ -375,6 +375,7 @@ EOF
         if [[ -f "${pid}_rstrt_end" ]]; then
             # Keep end snapshot as the preferred newest restart (mtime-based pick).
             touch "${pid}_rstrt_end"
+            stage_rst_archive "${pid}_rstrt_end" "${pid}_tc_${run_upto}.rst"
         fi
 
         state="$(tc_thermo_state "$pid")"
@@ -620,6 +621,7 @@ run_tg_lammps_resumable() {
             -var i_end "$i_end"
 
         tg_merge_chunk_outputs "$pid"
+        stage_rst_archive "${pid}_tg_rstrt_end" "${pid}_tg_point${i_end}.rst"
 
         next="$(tg_next_index "$pid")"
         echo "[TG] after chunk: next index ${next} / ${total}"
@@ -708,6 +710,7 @@ run_eq2_resumable() {
             if [[ -f "${pid}_Rg.data" ]]; then head -n "$nr" "${pid}_Rg.data" > "${pid}_Rg.tmp" && mv "${pid}_Rg.tmp" "${pid}_Rg.data"; fi
             echo "[EQ2][WARN] chunk failed (attempt ${try}); retrying from ${rst} with ${np_try} ranks"
         done
+        stage_rst_archive "${pid}_eq2_end.rst" "${pid}_eq2_${upto}.rst"
         if [[ -f "${pid}_eq2.data" ]]; then echo "[EQ2] complete for ${pid}"; return 0; fi
         cd "$initial_dir"
         checkpoint_barrier "eq2_chunk"
