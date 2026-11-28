@@ -355,6 +355,30 @@ else
   echo "[SKIP] EMD disabled (DO_EMD=$DO_EMD)"
 fi
 
+# Step 9: Structure analysis. No simulation: reads the snapshots and the NPT record that the EMD
+# step saved. Gives the bulk modulus from volume fluctuations, RDF and X-ray structure factor,
+# chain statistics and free volume. A failed script is reported and the others still run.
+if is_true "${DO_STRUCT:-0}"; then
+  if step_done_struct "$PID"; then
+    echo "[SKIP] Structure analysis already complete for $PID"
+  elif ! compgen -G "POLYMER_DATA/EMD/$PID/eq2_*.data" > /dev/null; then
+    echo "[SKIP] Structure analysis: no EMD snapshots for $PID (run the EMD step first)"
+  else
+  echo "[RUN ] Structure analysis for $PID"
+  mkdir -p "POLYMER_DATA/STRUCTURE/$PID"
+  cd "POLYMER_DATA/STRUCTURE/$PID"
+  for script in calc_Kfluct.py calc_structure.py calc_FFV.py; do
+    python "../../../3.Analysis/$script" "$PID" || echo "[WARN] $script failed for $PID"
+  done
+  python "../../../3.Analysis/update_structure.py" "$PID" || echo "[WARN] update_structure.py failed for $PID"
+
+  cd "$initial_dir"
+  checkpoint_barrier "struct"
+  fi
+else
+  echo "[SKIP] Structure analysis disabled (DO_STRUCT=${DO_STRUCT:-0})"
+fi
+
 write_checkpoint_status "${SGE_TASK_ID:-unknown}" "$PID"
 agent_checkpoint_log "H3" "files.sh:done" "workflow finished for pid" "{\"pid\":\"${PID}\"}"
 

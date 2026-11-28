@@ -46,12 +46,12 @@ ADEPT turns polymer **SMILES** into tabulated physical/chemical properties: amor
 
 | Category | Properties |
 | --- | --- |
-| Structural | Density, radius of gyration |
+| Structural | Density, radius of gyration, end-to-end distance, characteristic ratio, persistence length, RDF and X-ray structure factor, fractional free volume and accessible volume |
 | Monomer DFT | HOMO, LUMO, band gap, dipole, polarizability, energies, monomer dielectric / RI |
 | Dielectric (MD) | Dielectric constant and related components |
 | Thermal | Thermal conductivity (NEMD), Tg, Cp, expansion coefficients |
 | Transport | Viscosity (and related) |
-| Mechanical | Bulk / shear / Young’s moduli, Poisson’s ratio (from EMD) |
+| Mechanical | Bulk / shear / Young’s moduli, Poisson’s ratio (from EMD); bulk modulus from volume fluctuations |
 
 ## Repository layout
 
@@ -165,6 +165,7 @@ Environment variables (set in the submit `environment = "..."` string):
 | --- | --- |
 | `CHARGE_METHOD` | `GASTEIGER`, `RESP` or `ESP`. RESP (HF/6-31G*, restrained) and ESP (ωB97X-D/def2-TZVP, unrestrained) are fit with Psi4 on the H-capped monomer; each removed cap-H charge is folded onto its head/tail atom so the repeat unit stays neutral. |
 | `DO_APG` / `DO_OPT` / `DO_MONO_ELECTRONIC` / `DO_DC` / `DO_TC` / `DO_TG` / `DO_VISC` / `DO_EMD` | Stage toggles (`0`/`1`) |
+| `DO_STRUCT` | Structure analysis of the EMD output (no simulation, about a minute). Follows `DO_EMD` unless set. Set `DO_STRUCT=1` with the other toggles at `0` to add these properties to a finished dataset. |
 | `ADEPT_CHECKPOINT_MODE` | `exit85` enables self-checkpoint barriers |
 | `ADEPT_CKPT_BUDGET_SEC` | `0` = checkpoint after every completed step |
 | `ADEPT_TC_TOTAL_STEPS` | TC production length (default `20000000`) |
@@ -203,6 +204,7 @@ POLYMER_DATA/
 ├── GLASS_TRANSITION/<PID>/
 ├── VISCOSITY/<PID>/
 ├── EMD/<PID>/
+├── STRUCTURE/<PID>/      # <PID>_rdf.dat, <PID>_sq.dat, <PID>_structure.json, <PID>_ffv.json, <PID>_kfluct.json
 └── RESULTS/
     ├── RHO_MD.csv        # Density [g/cm^3]
     ├── RG_MD.csv         # Radius of gyration [Å]
@@ -231,7 +233,15 @@ POLYMER_DATA/
     ├── K_MD.csv          # Bulk modulus [GPa]
     ├── G_MD.csv          # Shear modulus [GPa]
     ├── E_MD.csv          # Young's modulus [GPa]
-    └── NU_MD.csv         # Poisson's ratio [-]
+    ├── NU_MD.csv         # Poisson's ratio [-]
+    ├── KFLUCT_MD.csv     # Bulk modulus from NPT volume fluctuations, kB T <V>/<dV^2> [GPa]
+    ├── QPEAK_MD.csv      # Position of the main X-ray S(q) peak below 3 1/Å [1/Å]
+    ├── REE_MD.csv        # Root-mean-square end-to-end distance of the chains [Å]
+    ├── CN_MD.csv         # Characteristic ratio <R^2>/(n <l^2>) [-]
+    ├── LP_MD.csv         # Persistence length (C_n + 1) l / 2 [Å]
+    ├── FFV_MD.csv        # Fractional free volume: FFV_BONDI = 1 - 1.3 Vw/V, FFV_GEOM = grid [-]
+    ├── FAV_<GAS>_MD.csv  # Accessible volume fraction for a probe of that gas (HE, CO2, O2, N2, CH4) [-]
+    └── CAVR_MD.csv       # Mean cavity radius at a 1.30 Å probe [Å]
 ```
 
 The `RESULTS/` CSVs are keyed by `PID`, so results from many array tasks collect into a single table per property.
@@ -242,6 +252,7 @@ The `RESULTS/` CSVs are keyed by `PID`, so results from many array tasks collect
 - **`BANDGAP_DFT`** is the HOMO-LUMO gap of the isolated monomer (repeat unit) from Psi4 DFT, not the band gap of a polymer chain or solid. It is typically larger than measured optical band gaps.
 - **`DC_MD` vs `PE_MD`.** `DC_MD` is the relative (dimensionless) static dielectric constant, ε = ε_el + ε_dip − 1, where ε_el = n² comes from the DFT polarizability via Lorentz-Lorenz and ε_dip comes from MD dipole fluctuations. `PE_MD` is the absolute permittivity, DC × ε0, in pF/m; it is not a relative permittivity.
 - **Glass transition temperature.** `TG_MD` comes from stepwise NPT cooling over Tg_ML ± 150 K (lower bound 50 K) in 10 K steps of 0.5 ns equilibration + 0.5 ns production (about 10 K/ns), followed by a bilinear fit of density vs temperature. The 1000 → 300 K cool-down in the equilibration step (about 140 K/ns) is part of structure preparation and is not the Tg protocol.
+- **Structure analysis** (`DO_STRUCT`) uses only what the EMD step already saves: 100 snapshots over its 8 ns NPT run at 300 K and the volume record. `KFLUCT_MD` is the relaxed bulk modulus of the simulated glass and reads lower than `K_MD`, which comes from a 0.25 ps strain step. `QPEAK_MD` uses atomic numbers as X-ray weights (no q-dependent form factors) and an RDF cut at half the box, so q below about 0.55 1/Å is not reported. `REE_MD`, `CN_MD` and `LP_MD` follow the longest path through the non-hydrogen bond graph of each chain; a cell holds only a few chains, which do not rearrange at 300 K, so expect an uncertainty of about 30% on these three (it is written to `<PID>_structure.json`). `FFV_MD` and the accessible volumes are from `calc_FFV.py` (Bondi radii; Zhao et al. group-additivity Vw for `FFV_BONDI`).
 - **Viscosity and diffusion** are computed at T = Tg + 50 K, using MD Tg when available and the ML-predicted Tg otherwise; the temperature is recorded in the `TEMP` column.
 
 ## Legacy / local HPC

@@ -110,6 +110,7 @@ export DO_TC="${DO_TC:-1}"
 export DO_TG="${DO_TG:-1}"
 export DO_VISC="${DO_VISC:-1}"
 export DO_EMD="${DO_EMD:-1}"
+export DO_STRUCT="${DO_STRUCT:-$DO_EMD}"   # structure analysis of the EMD output; follows DO_EMD unless set
 export CHARGE_METHOD="${CHARGE_METHOD:-GASTEIGER}"
 
 echo "[INFO] ADEPT HTCondor run: SGE_TASK_ID=${SGE_TASK_ID} NSLOTS=${NSLOTS} CHARGE_METHOD=${CHARGE_METHOD}"

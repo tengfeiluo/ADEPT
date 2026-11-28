@@ -46,6 +46,7 @@ write_checkpoint_status() {
         echo "tg=$(step_done_tg "$pid" && echo yes || echo no)"
         echo "visc=$(step_done_visc "$pid" && echo yes || echo no)"
         echo "emd=$(step_done_emd "$pid" && echo yes || echo no)"
+        echo "struct=$(step_done_struct "$pid" && echo yes || echo no)"
     } > "$status_file"
 }
 
@@ -83,6 +84,7 @@ step_is_done() {
         emd_chunk)       emd_has_resume_artifacts "$pid" ;;
         visc)            step_done_visc "$pid" ;;
         emd)             step_done_emd "$pid" ;;
+        struct)          step_done_struct "$pid" ;;
         *)               return 0 ;;
     esac
 }
@@ -412,6 +414,12 @@ step_done_emd() {
     local pid="$1"
     csv_has_pid "POLYMER_DATA/RESULTS/E_MD.csv" "$pid" ||
         csv_has_pid "POLYMER_DATA/RESULTS/K_MD.csv" "$pid"
+}
+
+# Structure analysis (no simulation). QPEAK comes from calc_structure.py, the core script.
+step_done_struct() {
+    local pid="$1"
+    csv_has_pid "POLYMER_DATA/RESULTS/QPEAK_MD.csv" "$pid"
 }
 
 run_lammps_opt_for_pid() {
